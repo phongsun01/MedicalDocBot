@@ -1,36 +1,25 @@
-{#-
-  device_yaml_template.yaml.j2 — Template device.yaml cho thiết bị y tế
-  Sinh ra file device.yaml trong thư mục của từng thiết bị
--#}
-# device.yaml — Thông tin thiết bị y tế
-# Sinh tự động bởi create_device.py — chỉnh sửa thủ công nếu cần
-
-slug: "{{ slug }}"
-vendor: "{{ vendor | default('') }}"
-model: "{{ model | default('') }}"
-category_id: "{{ category_id | default('') }}"
-category_slug: "{{ category_slug | default('') }}"
-group_slug: "{{ group_slug | default('') }}"
-risk_class: "{{ risk_class | default('') }}"
-year: {{ year | default('null') }}
+---
+vendor: "{{ vendor }}"
+model: "{{ model }}"
+category_id: "{{ category_id }}"
+category_slug: "{{ category_slug }}"
+risk_class: "{{ risk_class | default('C') }}"
+year: {{ year | default(2020) }}
 hs_code: "{{ hs_code | default('') }}"
 status: "{{ status | default('Hoạt động') }}"
-
-# Thông số kỹ thuật
-specs:
-  power_kw: {{ power_kw | default('null') }}
-  weight_kg: {{ weight_kg | default('null') }}
-
-# Danh sách file theo loại tài liệu
+power_kw: {{ power_kw | default(0) }}
+weight_kg: {{ weight_kg | default(0) }}
+aliases: {{ aliases | default([]) | tojson }}
+links:
+  fda: "{{ links.fda | default('') }}"
+  ce: "{{ links.ce | default('') }}"
 files:
   ky_thuat: []
   cau_hinh: []
-  hop_dong: []
   bao_gia: []
   trung_thau: []
+  hop_dong: []
   so_sanh: []
   khac: []
-
-# Metadata
 created_at: "{{ created_at }}"
-created_by: "MedicalDocBot create_device.py"
+updated_at: "{{ updated_at }}"

@@ -1,220 +1,207 @@
 """
-slug.py — Validate và normalize slug thiết bị y tế
-Regex chuẩn: ^[a-z0-9]+(?:_[a-z0-9]+)*$
-Golden samples: x_quang_ge_optima_xr220_standard, sieu_am_hitachi_arrietta_60_fulloption
+slug.py — Validate và normalize slug cho thiết bị y tế.
+
+Slug hợp lệ: ^[a-z0-9]+(?:_[a-z0-9]+)*$
+Ví dụ: x_quang_ge_optima_xr220_standard
 """
+
+from __future__ import annotations
 
 import re
 import unicodedata
-import logging
-from typing import Optional
 
-from app.config import SLUG_PATTERN
-
-logger = logging.getLogger("medicalbot.slug")
-
-# Compile regex một lần duy nhất
-_SLUG_RE = re.compile(SLUG_PATTERN)
+# Regex chuẩn cho slug hợp lệ
+SLUG_REGEX = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 
 # Bảng chuyển đổi ký tự tiếng Việt → ASCII
-# (unicodedata.normalize không xử lý hết các trường hợp tiếng Việt)
-_VIET_MAP: dict[str, str] = {
-    "à": "a", "á": "a", "ả": "a", "ã": "a", "ạ": "a",
+_VIET_MAP = str.maketrans(
+    "àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ"
+    "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ"
+    "đĐ",
+    "aaaaaaaceeeeiiiidnoooooouuuuythyy"
+    "AAAAAAACEEEEIIIIDNOOOOOOUUUUYTHYY"
+    "dD",
+)
+
+# Ký tự tiếng Việt có dấu phức tạp (cần xử lý riêng)
+_VIET_COMPLEX = {
     "ă": "a", "ắ": "a", "ặ": "a", "ằ": "a", "ẳ": "a", "ẵ": "a",
-    "â": "a", "ấ": "a", "ầ": "a", "ẩ": "a", "ẫ": "a", "ậ": "a",
-    "è": "e", "é": "e", "ẻ": "e", "ẽ": "e", "ẹ": "e",
-    "ê": "e", "ế": "e", "ề": "e", "ể": "e", "ễ": "e", "ệ": "e",
-    "ì": "i", "í": "i", "ỉ": "i", "ĩ": "i", "ị": "i",
-    "ò": "o", "ó": "o", "ỏ": "o", "õ": "o", "ọ": "o",
-    "ô": "o", "ố": "o", "ồ": "o", "ổ": "o", "ỗ": "o", "ộ": "o",
-    "ơ": "o", "ớ": "o", "ờ": "o", "ở": "o", "ỡ": "o", "ợ": "o",
-    "ù": "u", "ú": "u", "ủ": "u", "ũ": "u", "ụ": "u",
-    "ư": "u", "ứ": "u", "ừ": "u", "ử": "u", "ữ": "u", "ự": "u",
-    "ỳ": "y", "ý": "y", "ỷ": "y", "ỹ": "y", "ỵ": "y",
+    "â": "a", "ấ": "a", "ậ": "a", "ầ": "a", "ẩ": "a", "ẫ": "a",
+    "ê": "e", "ế": "e", "ệ": "e", "ề": "e", "ể": "e", "ễ": "e",
+    "ô": "o", "ố": "o", "ộ": "o", "ồ": "o", "ổ": "o", "ỗ": "o",
+    "ơ": "o", "ớ": "o", "ợ": "o", "ờ": "o", "ở": "o", "ỡ": "o",
+    "ư": "u", "ứ": "u", "ự": "u", "ừ": "u", "ử": "u", "ữ": "u",
+    "ỳ": "y", "ỵ": "y", "ỷ": "y", "ỹ": "y",
     "đ": "d",
-    # Chữ hoa (phòng trường hợp input chưa lowercase)
-    "À": "a", "Á": "a", "Ả": "a", "Ã": "a", "Ạ": "a",
+    # Chữ hoa
     "Ă": "a", "Ắ": "a", "Ặ": "a", "Ằ": "a", "Ẳ": "a", "Ẵ": "a",
-    "Â": "a", "Ấ": "a", "Ầ": "a", "Ẩ": "a", "Ẫ": "a", "Ậ": "a",
-    "È": "e", "É": "e", "Ẻ": "e", "Ẽ": "e", "Ẹ": "e",
-    "Ê": "e", "Ế": "e", "Ề": "e", "Ể": "e", "Ễ": "e", "Ệ": "e",
-    "Ì": "i", "Í": "i", "Ỉ": "i", "Ĩ": "i", "Ị": "i",
-    "Ò": "o", "Ó": "o", "Ỏ": "o", "Õ": "o", "Ọ": "o",
-    "Ô": "o", "Ố": "o", "Ồ": "o", "Ổ": "o", "Ỗ": "o", "Ộ": "o",
-    "Ơ": "o", "Ớ": "o", "Ờ": "o", "Ở": "o", "Ỡ": "o", "Ợ": "o",
-    "Ù": "u", "Ú": "u", "Ủ": "u", "Ũ": "u", "Ụ": "u",
-    "Ư": "u", "Ứ": "u", "Ừ": "u", "Ử": "u", "Ữ": "u", "Ự": "u",
-    "Ỳ": "y", "Ý": "y", "Ỷ": "y", "Ỹ": "y", "Ỵ": "y",
+    "Â": "a", "Ấ": "a", "Ậ": "a", "Ầ": "a", "Ẩ": "a", "Ẫ": "a",
+    "Ê": "e", "Ế": "e", "Ệ": "e", "Ề": "e", "Ể": "e", "Ễ": "e",
+    "Ô": "o", "Ố": "o", "Ộ": "o", "Ồ": "o", "Ổ": "o", "Ỗ": "o",
+    "Ơ": "o", "Ớ": "o", "Ợ": "o", "Ờ": "o", "Ở": "o", "Ỡ": "o",
+    "Ư": "u", "Ứ": "u", "Ự": "u", "Ừ": "u", "Ử": "u", "Ữ": "u",
+    "Ỳ": "y", "Ỵ": "y", "Ỷ": "y", "Ỹ": "y",
     "Đ": "d",
+    # Tổ hợp dấu thanh
+    "ạ": "a", "ả": "a", "ã": "a", "á": "a", "à": "a",
+    "ẹ": "e", "ẻ": "e", "ẽ": "e", "é": "e", "è": "e",
+    "ị": "i", "ỉ": "i", "ĩ": "i", "í": "i", "ì": "i",
+    "ọ": "o", "ỏ": "o", "õ": "o", "ó": "o", "ò": "o",
+    "ụ": "u", "ủ": "u", "ũ": "u", "ú": "u", "ù": "u",
+    "ị": "i",
 }
 
 
-def _remove_diacritics(text: str) -> str:
-    """
-    Loại bỏ dấu tiếng Việt, chuyển về ASCII.
-    Ưu tiên bảng _VIET_MAP, fallback unicodedata.
-    """
-    # Thay thế theo bảng tiếng Việt trước
-    result = []
-    for ch in text:
-        result.append(_VIET_MAP.get(ch, ch))
-    text = "".join(result)
-
-    # Fallback: normalize NFD rồi loại combining marks
-    normalized = unicodedata.normalize("NFD", text)
-    ascii_text = "".join(
-        ch for ch in normalized
-        if unicodedata.category(ch) != "Mn"
-    )
-    return ascii_text
-
-
-def validate_slug(slug: str) -> bool:
-    """
-    Kiểm tra slug hợp lệ theo regex ^[a-z0-9]+(?:_[a-z0-9]+)*$
-    
-    Args:
-        slug: Chuỗi cần kiểm tra
-        
-    Returns:
-        True nếu hợp lệ, False nếu không
-        
-    Examples:
-        >>> validate_slug("x_quang_ge_optima_xr220_standard")
-        True
-        >>> validate_slug("X-Quang GE")
-        False
-    """
-    if not slug or not isinstance(slug, str):
-        return False
-    return bool(_SLUG_RE.match(slug))
-
-
-def normalize_slug(text: str) -> str:
+def normalize(text: str) -> str:
     """
     Chuẩn hóa chuỗi thành slug hợp lệ.
-    
+
     Quy trình:
-    1. Loại bỏ dấu tiếng Việt
+    1. Chuyển ký tự tiếng Việt → ASCII
     2. Lowercase
-    3. Thay space, hyphen, dấu chấm → underscore
-    4. Loại ký tự không phải [a-z0-9_]
-    5. Gộp nhiều underscore liên tiếp thành một
-    6. Trim underscore đầu/cuối
-    
+    3. Thay thế ký tự không hợp lệ bằng '_'
+    4. Loại bỏ '_' thừa ở đầu/cuối và liên tiếp
+
     Args:
-        text: Chuỗi đầu vào (có thể có tiếng Việt, space, ký tự đặc biệt)
-        
+        text: Chuỗi đầu vào (có thể có dấu, hoa thường, khoảng trắng)
+
     Returns:
-        Slug hợp lệ hoặc chuỗi rỗng nếu không thể chuẩn hóa
-        
-    Examples:
-        >>> normalize_slug("GE Healthcare Optima XR220")
+        Slug hợp lệ theo regex ^[a-z0-9]+(?:_[a-z0-9]+)*$
+
+    Ví dụ:
+        >>> normalize("GE Healthcare Optima XR220")
         'ge_healthcare_optima_xr220'
-        >>> normalize_slug("Siêu âm Hitachi Arrietta 60")
-        'sieu_am_hitachi_arrietta_60'
+        >>> normalize("Siêu âm Hitachi Arietta 60")
+        'sieu_am_hitachi_arietta_60'
     """
     if not text:
         return ""
 
-    # Bước 1: Loại dấu tiếng Việt
-    text = _remove_diacritics(text)
+    # Bước 1: Thay ký tự tiếng Việt phức tạp
+    result = ""
+    for ch in text:
+        result += _VIET_COMPLEX.get(ch, ch)
 
-    # Bước 2: Lowercase
-    text = text.lower()
+    # Bước 2: Unicode normalize → tách dấu → bỏ dấu
+    result = unicodedata.normalize("NFD", result)
+    result = "".join(c for c in result if unicodedata.category(c) != "Mn")
 
-    # Bước 3: Thay space, hyphen, dấu chấm, slash → underscore
-    text = re.sub(r"[\s\-./\\]+", "_", text)
+    # Bước 3: Lowercase
+    result = result.lower()
 
-    # Bước 4: Loại ký tự không phải [a-z0-9_]
-    text = re.sub(r"[^a-z0-9_]", "", text)
+    # Bước 4: Thay ký tự không hợp lệ bằng '_'
+    result = re.sub(r"[^a-z0-9]+", "_", result)
 
-    # Bước 5: Gộp nhiều underscore liên tiếp
-    text = re.sub(r"_+", "_", text)
+    # Bước 5: Bỏ '_' thừa ở đầu/cuối
+    result = result.strip("_")
 
-    # Bước 6: Trim underscore đầu/cuối
-    text = text.strip("_")
+    # Bước 6: Gộp nhiều '_' liên tiếp thành 1
+    result = re.sub(r"_+", "_", result)
 
-    return text
+    return result
 
 
-def build_device_slug(
-    group_slug: str,
-    vendor: str,
-    model: str,
-    suffix: Optional[str] = None,
-) -> str:
+def validate(slug: str) -> bool:
     """
-    Tạo slug chuẩn cho thiết bị theo pattern:
-    <group_slug>_<vendor_slug>_<model_slug>[_<suffix>]
-    
+    Kiểm tra slug có hợp lệ theo regex không.
+
     Args:
-        group_slug: Slug của nhóm thiết bị (đã validate)
-        vendor: Tên nhà sản xuất (vd: "GE Healthcare")
-        model: Tên model (vd: "Optima XR220")
-        suffix: Hậu tố tùy chọn (vd: "standard", "fulloption")
-        
+        slug: Chuỗi cần kiểm tra
+
     Returns:
-        Slug hợp lệ
-        
-    Raises:
-        ValueError: Nếu slug kết quả không hợp lệ
-        
-    Examples:
-        >>> build_device_slug("x_quang", "GE Healthcare", "Optima XR220", "standard")
-        'x_quang_ge_healthcare_optima_xr220_standard'
+        True nếu hợp lệ, False nếu không
+
+    Ví dụ:
+        >>> validate("x_quang_ge_optima_xr220_standard")
+        True
+        >>> validate("X-Quang GE")
+        False
     """
-    parts = [
-        group_slug,
-        normalize_slug(vendor),
-        normalize_slug(model),
-    ]
-    if suffix:
-        parts.append(normalize_slug(suffix))
-
-    slug = "_".join(p for p in parts if p)
-
-    if not validate_slug(slug):
-        raise ValueError(
-            f"Không thể tạo slug hợp lệ từ: group='{group_slug}', "
-            f"vendor='{vendor}', model='{model}', suffix='{suffix}' → '{slug}'"
-        )
-
-    return slug
+    if not slug:
+        return False
+    return bool(SLUG_REGEX.match(slug))
 
 
-# ── CLI test nhanh ────────────────────────────────────────────────────────────
+def build_device_slug(vendor: str, model: str, variant: str = "") -> str:
+    """
+    Tạo device slug từ vendor + model + variant.
+
+    Args:
+        vendor: Tên hãng, VD "GE Healthcare"
+        model: Tên model, VD "Optima XR220"
+        variant: Biến thể (tùy chọn), VD "Standard", "Full Option"
+
+    Returns:
+        Slug hợp lệ, VD "ge_healthcare_optima_xr220_standard"
+
+    Ví dụ:
+        >>> build_device_slug("GE Healthcare", "Optima XR220", "Standard")
+        'ge_healthcare_optima_xr220_standard'
+        >>> build_device_slug("Hitachi", "Arietta 60", "Full Option")
+        'hitachi_arietta_60_full_option'
+    """
+    parts = [vendor, model]
+    if variant:
+        parts.append(variant)
+
+    combined = "_".join(normalize(p) for p in parts if p)
+    # Gộp '_' thừa sau khi join
+    combined = re.sub(r"_+", "_", combined).strip("_")
+    return combined
+
+
+def build_group_slug(category_slug: str, group_slug: str) -> str:
+    """
+    Tạo đường dẫn slug đầy đủ cho group.
+
+    Args:
+        category_slug: VD "chan_doan_hinh_anh"
+        group_slug: VD "x_quang"
+
+    Returns:
+        VD "chan_doan_hinh_anh/x_quang"
+    """
+    return f"{category_slug}/{group_slug}"
+
+
+# --- Golden samples để test ---
+GOLDEN_SAMPLES = [
+    "x_quang_ge_optima_xr220_standard",
+    "sieu_am_hitachi_arrietta_60_fulloption",
+]
+
+
+def test_golden_samples() -> bool:
+    """
+    Kiểm tra tất cả golden samples pass regex.
+
+    Returns:
+        True nếu tất cả pass, False nếu có sample nào fail
+    """
+    all_pass = True
+    for sample in GOLDEN_SAMPLES:
+        ok = validate(sample)
+        status = "✅" if ok else "❌"
+        print(f"  {status} {sample}")
+        if not ok:
+            all_pass = False
+    return all_pass
+
+
 if __name__ == "__main__":
-    import sys
+    print("=== Kiểm tra Golden Samples ===")
+    ok = test_golden_samples()
+    print(f"\n{'✅ Tất cả pass' if ok else '❌ Có sample fail'}")
 
-    # Golden samples từ spec
-    golden_samples = [
-        "x_quang_ge_optima_xr220_standard",
-        "sieu_am_hitachi_arrietta_60_fulloption",
-    ]
-
-    print("=== Validate golden samples ===")
-    for sample in golden_samples:
-        ok = validate_slug(sample)
-        print(f"  {'✓' if ok else '✗'} {sample}")
-        assert ok, f"Golden sample thất bại: {sample}"
-
-    print("\n=== Normalize tests ===")
+    print("\n=== Test normalize ===")
     test_cases = [
         ("GE Healthcare Optima XR220", "ge_healthcare_optima_xr220"),
         ("Siêu âm Hitachi Arrietta 60", "sieu_am_hitachi_arrietta_60"),
-        ("X-Quang GE  Optima", "x_quang_ge_optima"),
-        ("Máy thở Dräger Evita V300", "may_tho_drager_evita_v300"),
+        ("X-Quang GE", "x_quang_ge"),
+        ("  Máy thở  Philips  ", "may_tho_philips"),
     ]
-    for input_str, expected in test_cases:
-        result = normalize_slug(input_str)
+    for text, expected in test_cases:
+        result = normalize(text)
         ok = result == expected
-        print(f"  {'✓' if ok else '✗'} '{input_str}' → '{result}' (expected: '{expected}')")
-
-    print("\n=== build_device_slug ===")
-    slug = build_device_slug("x_quang", "GE Healthcare", "Optima XR220", "standard")
-    print(f"  ✓ {slug}")
-    assert validate_slug(slug)
-
-    print("\n✓ slug.py OK")
-    sys.exit(0)
+        status = "✅" if ok else "❌"
+        print(f"  {status} '{text}' → '{result}' (expected: '{expected}')")

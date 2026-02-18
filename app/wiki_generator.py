@@ -1,279 +1,239 @@
 """
-wiki_generator.py — Sinh và cập nhật wiki Markdown cho thiết bị y tế
-Idempotent: chạy nhiều lần không tạo duplicate.
-Dùng marker <!-- DOC_SECTION:xxx --> để update đúng section.
+wiki_generator.py — Sinh và cập nhật wiki Markdown cho thiết bị y tế.
+
+Render model_*.md từ Jinja2 template, cập nhật đúng section,
+không tạo duplicate. Sinh index_categories.md và index_groups.md.
+Idempotent: chạy nhiều lần → kết quả giống nhau.
 """
 
-import json
+from __future__ import annotations
+
 import logging
+import os
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
+import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from app.config import BASE_DIR, WIKI_DIR, assert_within_base_dir
-from app.index_store import get_files_by_device, init_db
-from app.taxonomy import get_taxonomy
+logger = logging.getLogger(__name__)
 
-logger = logging.getLogger("medicalbot.wiki_generator")
+# Marker để tìm section tự động sinh trong MD
+_AUTO_SECTION_START = "<!-- AUTO-GENERATED: DO NOT EDIT BELOW -->"
+_AUTO_SECTION_END = "<!-- AUTO-GENERATED: END -->"
 
-# Đường dẫn templates
-_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
-
-# Jinja2 environment
-_jinja_env = Environment(
-    loader=FileSystemLoader(str(_TEMPLATES_DIR)),
-    undefined=StrictUndefined,
-    autoescape=False,
-    keep_trailing_newline=True,
-)
-
-# Regex tìm section marker
-_SECTION_RE = re.compile(
-    r"<!-- DOC_SECTION:(?P<name>\w+) -->.*?<!-- /DOC_SECTION:(?P=name) -->",
-    re.DOTALL,
-)
-
-# Mapping doc_type → tên section tiếng Việt
+# Label tiếng Việt cho doc_type
 DOC_TYPE_LABELS: dict[str, str] = {
-    "ky_thuat": "Tài liệu kỹ thuật",
-    "cau_hinh": "Cấu hình",
-    "hop_dong": "Hợp đồng",
-    "bao_gia": "Báo giá",
-    "trung_thau": "Trúng thầu",
-    "so_sanh": "So sánh",
-    "khac": "Khác",
+    "ky_thuat": "📋 Kỹ thuật",
+    "cau_hinh": "⚙️ Cấu hình",
+    "bao_gia": "💰 Báo giá",
+    "trung_thau": "🏆 Trúng thầu",
+    "hop_dong": "📝 Hợp đồng",
+    "so_sanh": "⚖️ So sánh",
+    "thong_tin": "ℹ️ Thông tin",
+    "lien_ket": "🔗 Liên kết",
+    "khac": "📁 Khác",
 }
 
 
-def _now_str() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+def _now_iso() -> str:
+    """Timestamp ISO 8601 UTC."""
+    return datetime.now(timezone.utc).isoformat()
 
 
-def _build_section_content(doc_type: str, files: list[dict]) -> str:
+def _format_size(size_bytes: int) -> str:
+    """Định dạng kích thước file."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+class WikiGenerator:
     """
-    Sinh nội dung cho một section doc_type.
-    Mỗi file là một dòng markdown link.
+    Sinh và cập nhật wiki Markdown cho thiết bị y tế.
+
+    Ví dụ sử dụng:
+        gen = WikiGenerator("config.yaml")
+        gen.update_device_wiki(
+            device_slug="x_quang_ge_optima_xr220_standard",
+            device_info={...},
+            files=[...]
+        )
+        gen.generate_indexes(taxonomy)
     """
-    if not files:
-        return f"<!-- DOC_SECTION:{doc_type} -->\n_Chưa có tài liệu._\n<!-- /DOC_SECTION:{doc_type} -->"
 
-    lines = [f"<!-- DOC_SECTION:{doc_type} -->"]
-    for f in files:
-        path = Path(f["path"])
-        rel = path.relative_to(BASE_DIR) if path.is_relative_to(BASE_DIR) else path
-        size_kb = (f.get("size_bytes") or 0) // 1024
-        updated = (f.get("updated_at") or "")[:10]
-        lines.append(f"- [{path.name}]({rel}) — {size_kb} KB — {updated}")
-    lines.append(f"<!-- /DOC_SECTION:{doc_type} -->")
-    return "\n".join(lines)
+    def __init__(self, config_path: str = "config.yaml") -> None:
+        import yaml as _yaml
 
+        with open(config_path, encoding="utf-8") as f:
+            self._config = _yaml.safe_load(f)
 
-def update_model_wiki(
-    device_slug: str,
-    doc_type: str,
-    file_path: Path,
-    wiki_path: Optional[Path] = None,
-) -> None:
-    """
-    Cập nhật đúng section doc_type trong model_<slug>.md.
-    Không duplicate — dùng marker để replace.
-    
-    Args:
-        device_slug: Slug thiết bị
-        doc_type: Loại tài liệu (ky_thuat, hop_dong, v.v.)
-        file_path: Đường dẫn file vừa được index
-        wiki_path: Override đường dẫn wiki (mặc định: WIKI_DIR/model_<slug>.md)
-    """
-    try:
-        if wiki_path is None:
-            wiki_path = WIKI_DIR / f"model_{device_slug}.md"
+        self._wiki_dir = Path(
+            os.path.expandvars(os.path.expanduser(self._config["paths"]["wiki_dir"]))
+        )
+        self._template_dir = Path(self._config["wiki"]["template_dir"])
+        self._backup = self._config["wiki"]["backup_before_write"]
 
-        if not wiki_path.exists():
-            logger.warning("Wiki chưa tồn tại cho '%s', bỏ qua update", device_slug)
-            return
+        # Jinja2 environment
+        self._jinja = Environment(
+            loader=FileSystemLoader(str(self._template_dir)),
+            undefined=StrictUndefined,
+            autoescape=False,
+        )
+        self._jinja.filters["format_size"] = _format_size
+        self._jinja.globals["doc_type_labels"] = DOC_TYPE_LABELS
 
-        # Lấy tất cả file của device + doc_type từ DB
-        files = get_files_by_device(device_slug, doc_type)
+    def _wiki_path(self, device_slug: str) -> Path:
+        """Đường dẫn file wiki cho thiết bị."""
+        return self._wiki_dir / "devices" / f"model_{device_slug}.md"
 
-        # Sinh nội dung section mới
-        new_section = _build_section_content(doc_type, files)
+    def _backup_file(self, path: Path) -> None:
+        """Backup file trước khi ghi đè."""
+        if path.exists() and self._backup:
+            shutil.copy2(path, path.with_suffix(".md.bak"))
 
-        # Đọc nội dung hiện tại
-        content = wiki_path.read_text(encoding="utf-8")
+    def _replace_auto_section(self, content: str, new_section: str) -> str:
+        """
+        Thay thế section tự động sinh trong file MD.
 
-        # Pattern tìm section cụ thể
-        section_pattern = re.compile(
-            rf"<!-- DOC_SECTION:{re.escape(doc_type)} -->.*?<!-- /DOC_SECTION:{re.escape(doc_type)} -->",
+        Tìm markers AUTO-GENERATED và thay nội dung giữa chúng.
+        Nếu chưa có markers → append vào cuối.
+        """
+        pattern = re.compile(
+            rf"{re.escape(_AUTO_SECTION_START)}.*?{re.escape(_AUTO_SECTION_END)}",
             re.DOTALL,
         )
+        replacement = f"{_AUTO_SECTION_START}\n{new_section}\n{_AUTO_SECTION_END}"
 
-        if section_pattern.search(content):
-            # Replace section hiện có
-            new_content = section_pattern.sub(new_section, content)
+        if pattern.search(content):
+            return pattern.sub(replacement, content)
         else:
-            # Append section mới vào cuối
-            new_content = content.rstrip() + f"\n\n{new_section}\n"
+            return content.rstrip() + f"\n\n{replacement}\n"
 
-        if new_content != content:
-            wiki_path.write_text(new_content, encoding="utf-8")
-            logger.info("Đã cập nhật wiki [%s] section '%s'", device_slug, doc_type)
-        else:
-            logger.debug("Wiki [%s] section '%s' không thay đổi", device_slug, doc_type)
+    def update_device_wiki(
+        self,
+        device_slug: str,
+        device_info: dict[str, Any],
+        files: list[dict[str, Any]],
+    ) -> Path:
+        """
+        Tạo hoặc cập nhật wiki MD cho một thiết bị.
 
-    except Exception as exc:
-        logger.error(
-            json.dumps(
-                {
-                    "op": "update_model_wiki",
-                    "device_slug": device_slug,
-                    "doc_type": doc_type,
-                    "error": str(exc),
-                },
-                ensure_ascii=False,
-            )
-        )
+        Args:
+            device_slug: Slug thiết bị
+            device_info: Thông tin từ device.yaml
+            files: Danh sách files từ index_store
 
-
-def create_model_wiki(
-    device_slug: str,
-    device_info: dict,
-    wiki_path: Optional[Path] = None,
-) -> Path:
-    """
-    Tạo mới model_<slug>.md từ template Jinja2.
-    Idempotent: nếu đã tồn tại thì không ghi đè.
-    
-    Args:
-        device_slug: Slug thiết bị
-        device_info: Dict thông tin thiết bị (vendor, model, category_id, v.v.)
-        wiki_path: Override đường dẫn output
-        
-    Returns:
-        Path của file wiki đã tạo/tồn tại
-    """
-    if wiki_path is None:
-        wiki_path = WIKI_DIR / f"model_{device_slug}.md"
-
-    if wiki_path.exists():
-        logger.info("Wiki đã tồn tại: %s (bỏ qua)", wiki_path.name)
-        return wiki_path
-
-    try:
-        template = _jinja_env.get_template("model_template.md.j2")
-        content = template.render(
-            slug=device_slug,
-            generated_at=_now_str(),
-            **device_info,
-        )
+        Returns:
+            Đường dẫn file wiki đã tạo/cập nhật
+        """
+        wiki_path = self._wiki_path(device_slug)
         wiki_path.parent.mkdir(parents=True, exist_ok=True)
-        wiki_path.write_text(content, encoding="utf-8")
-        logger.info("Đã tạo wiki: %s", wiki_path.name)
+
+        # Nhóm files theo doc_type
+        file_groups: dict[str, list[dict[str, Any]]] = {}
+        for f in files:
+            dt = f.get("doc_type", "khac")
+            file_groups.setdefault(dt, []).append(f)
+
+        # Đếm theo doc_type
+        counts = {dt: len(fs) for dt, fs in file_groups.items()}
+
+        # Tìm file mới nhất theo doc_type
+        latest: dict[str, str] = {}
+        for dt, fs in file_groups.items():
+            sorted_files = sorted(fs, key=lambda x: x.get("updated_at", ""), reverse=True)
+            if sorted_files:
+                latest[dt] = Path(sorted_files[0]["path"]).name
+
+        # Render auto-section (bảng tóm tắt + danh sách files)
+        try:
+            template = self._jinja.get_template("model_template.md.j2")
+        except Exception as e:
+            logger.error("Không load được template: %s", e)
+            raise
+
+        auto_section = template.render(
+            device_slug=device_slug,
+            device_info=device_info,
+            file_groups=file_groups,
+            counts=counts,
+            latest=latest,
+            updated_at=_now_iso(),
+            doc_type_labels=DOC_TYPE_LABELS,
+        )
+
+        if wiki_path.exists():
+            # Cập nhật section tự động trong file hiện có
+            self._backup_file(wiki_path)
+            existing = wiki_path.read_text(encoding="utf-8")
+            new_content = self._replace_auto_section(existing, auto_section)
+        else:
+            # Tạo file mới với header + auto section
+            vendor = device_info.get("vendor", "")
+            model = device_info.get("model", device_slug)
+            header = f"# {model}"
+            if vendor:
+                header += f" — {vendor}"
+            header += f"\n\n> Device slug: `{device_slug}`\n"
+            new_content = f"{header}\n{_AUTO_SECTION_START}\n{auto_section}\n{_AUTO_SECTION_END}\n"
+
+        wiki_path.write_text(new_content, encoding="utf-8")
+        logger.info("✅ Wiki cập nhật: %s", wiki_path)
         return wiki_path
 
-    except Exception as exc:
-        logger.error(
-            json.dumps(
-                {"op": "create_model_wiki", "device_slug": device_slug, "error": str(exc)},
-                ensure_ascii=False,
+    def generate_indexes(self, taxonomy: Any) -> tuple[Path, Path]:
+        """
+        Sinh wiki/index_categories.md và wiki/index_groups.md.
+
+        Args:
+            taxonomy: Instance của Taxonomy class
+
+        Returns:
+            Tuple (categories_path, groups_path)
+        """
+        self._wiki_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- index_categories.md ---
+        cats_path = self._wiki_dir / "index_categories.md"
+        cats_lines = [
+            "# Danh mục thiết bị y tế\n",
+            f"> Cập nhật: {_now_iso()}\n",
+            f"> Tổng số: {taxonomy.category_count} categories\n\n",
+            "| # | Slug | Tên tiếng Việt | Tên tiếng Anh | Số nhóm |\n",
+            "|---|------|----------------|---------------|----------|\n",
+        ]
+        for i, cat in enumerate(taxonomy.list_categories(), 1):
+            groups = cat.get("groups", [])
+            cats_lines.append(
+                f"| {i} | `{cat['slug']}` | {cat['label_vi']} | {cat['label_en']} | {len(groups)} |\n"
             )
-        )
-        raise
+        cats_path.write_text("".join(cats_lines), encoding="utf-8")
+        logger.info("✅ Index categories: %s", cats_path)
 
+        # --- index_groups.md ---
+        groups_path = self._wiki_dir / "index_groups.md"
+        groups_lines = [
+            "# Danh sách nhóm thiết bị y tế\n",
+            f"> Cập nhật: {_now_iso()}\n\n",
+        ]
+        for cat in taxonomy.list_categories():
+            groups_lines.append(f"## {cat['label_vi']}\n\n")
+            groups_lines.append(f"> `{cat['slug']}`\n\n")
+            groups = taxonomy.list_groups(cat["slug"])
+            if groups:
+                groups_lines.append("| Slug | Tên nhóm |\n")
+                groups_lines.append("|------|----------|\n")
+                for g in groups:
+                    groups_lines.append(f"| `{g['slug']}` | {g['label_vi']} |\n")
+            groups_lines.append("\n")
 
-def generate_index_categories(wiki_dir: Path = WIKI_DIR) -> Path:
-    """
-    Sinh wiki/index_categories.md — danh sách tất cả categories.
-    Idempotent: ghi đè mỗi lần chạy (nội dung tự động từ taxonomy).
-    
-    Returns:
-        Path của file index đã sinh
-    """
-    tx = get_taxonomy()
-    categories = tx.list_all_categories()
+        groups_path.write_text("".join(groups_lines), encoding="utf-8")
+        logger.info("✅ Index groups: %s", groups_path)
 
-    lines = [
-        "# Danh mục thiết bị y tế",
-        "",
-        f"_Cập nhật: {_now_str()}_",
-        "",
-        "| ID | Tên tiếng Việt | Tên tiếng Anh | Số nhóm |",
-        "|---|---|---|---|",
-    ]
-
-    for cat in categories:
-        lines.append(
-            f"| `{cat.id}` | {cat.vi} | {cat.en} | {len(cat.groups)} |"
-        )
-
-    lines += [
-        "",
-        "## Chi tiết từng danh mục",
-        "",
-    ]
-
-    for cat in categories:
-        lines.append(f"### {cat.vi} (`{cat.slug}`)")
-        lines.append("")
-        for grp in cat.groups:
-            lines.append(f"- **{grp.vi}** (`{grp.slug}`) — {grp.en}")
-        lines.append("")
-
-    output_path = wiki_dir / "index_categories.md"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("\n".join(lines), encoding="utf-8")
-    logger.info("Đã sinh index_categories.md (%d categories)", len(categories))
-    return output_path
-
-
-def generate_index_groups(wiki_dir: Path = WIKI_DIR) -> Path:
-    """
-    Sinh wiki/index_groups.md — danh sách tất cả groups phẳng.
-    
-    Returns:
-        Path của file index đã sinh
-    """
-    tx = get_taxonomy()
-    categories = tx.list_all_categories()
-
-    lines = [
-        "# Danh sách nhóm thiết bị y tế",
-        "",
-        f"_Cập nhật: {_now_str()}_",
-        "",
-        "| Nhóm slug | Tên tiếng Việt | Danh mục |",
-        "|---|---|---|",
-    ]
-
-    for cat in categories:
-        for grp in cat.groups:
-            lines.append(
-                f"| `{grp.slug}` | {grp.vi} | {cat.vi} |"
-            )
-
-    output_path = wiki_dir / "index_groups.md"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("\n".join(lines), encoding="utf-8")
-
-    total_groups = sum(len(c.groups) for c in categories)
-    logger.info("Đã sinh index_groups.md (%d groups)", total_groups)
-    return output_path
-
-
-def regenerate_all_indexes(wiki_dir: Path = WIKI_DIR) -> None:
-    """Sinh lại tất cả index files."""
-    generate_index_categories(wiki_dir)
-    generate_index_groups(wiki_dir)
-    logger.info("Đã sinh lại tất cả wiki indexes")
-
-
-# ── Entry point ───────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    import sys
-    logging.basicConfig(level=logging.INFO)
-    init_db()
-    regenerate_all_indexes()
-    print(f"✓ Đã sinh wiki indexes tại: {WIKI_DIR}")
-    sys.exit(0)
+        return cats_path, groups_path

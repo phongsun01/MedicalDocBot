@@ -1,286 +1,310 @@
 """
-watcher.py — File system watcher cho ~/MedicalDevices
-Dùng watchdog để theo dõi thay đổi file, debounce 3s, gửi vào event queue.
-Mọi lỗi được log JSON, không crash daemon.
+watcher.py — File watcher cho ~/MedicalDevices.
+
+Theo dõi sự kiện file mới/thay đổi, debounce 3 giây,
+log JSON Lines, whitelist path, bỏ qua file tạm.
+Daemon không crash khi lỗi đơn lẻ.
 """
 
+from __future__ import annotations
+
+import asyncio
 import json
 import logging
-import queue
-import threading
+import os
+import re
+import signal
+import sys
 import time
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any
 
-from watchdog.events import (
-    FileCreatedEvent,
-    FileModifiedEvent,
-    FileMovedEvent,
-    FileSystemEvent,
-    FileSystemEventHandler,
-)
+import yaml
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from app.config import BASE_DIR, WATCHER_DEBOUNCE_SECONDS, setup_logging
-from app.index_store import compute_sha256, init_db, log_event, upsert_file
-
-logger = logging.getLogger("medicalbot.watcher")
-
-# Các extension file được theo dõi
-WATCHED_EXTENSIONS = {
-    ".pdf", ".docx", ".doc", ".xlsx", ".xls",
-    ".pptx", ".ppt", ".jpg", ".jpeg", ".png",
-    ".zip", ".rar", ".7z",
-}
-
-# Thư mục bỏ qua (cache, db, hidden)
-IGNORED_DIRS = {".cache", ".db", "__pycache__", ".git", "wiki"}
+logger = logging.getLogger(__name__)
 
 
-def _should_watch(path: Path) -> bool:
-    """Kiểm tra file có nên được theo dõi không."""
-    # Bỏ qua hidden files
-    if path.name.startswith("."):
-        return False
-    # Bỏ qua thư mục đặc biệt
-    for part in path.parts:
-        if part in IGNORED_DIRS:
-            return False
-    # Chỉ theo dõi extension được phép
-    return path.suffix.lower() in WATCHED_EXTENSIONS
+def _load_config(config_path: str = "config.yaml") -> dict[str, Any]:
+    """Load cấu hình từ config.yaml."""
+    with open(config_path, encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 
-class _DebounceTimer:
+def _expand_path(path_str: str) -> Path:
+    """Mở rộng ~ và biến môi trường trong path."""
+    return Path(os.path.expandvars(os.path.expanduser(path_str)))
+
+
+def _now_iso() -> str:
+    """Timestamp ISO 8601 UTC."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+class EventDebouncer:
     """
-    Timer debounce: chờ DEBOUNCE_SECONDS sau event cuối cùng rồi mới xử lý.
-    Tránh spam khi copy file lớn (nhiều modified events liên tiếp).
+    Gom nhiều events trong cửa sổ debounce thành 1 batch.
+
+    Tránh spam khi copy nhiều file cùng lúc hoặc file lớn.
     """
 
-    def __init__(self, delay: float, callback: Callable[[str], None]) -> None:
-        self._delay = delay
-        self._callback = callback
-        self._timers: dict[str, threading.Timer] = {}
-        self._lock = threading.Lock()
+    def __init__(self, debounce_seconds: float = 3.0) -> None:
+        self._debounce = debounce_seconds
+        # path → (event_type, timestamp)
+        self._pending: dict[str, tuple[str, float]] = {}
+        self._lock = asyncio.Lock()
 
-    def trigger(self, path: str) -> None:
-        """Kích hoạt debounce cho path. Reset timer nếu đã có."""
-        with self._lock:
-            if path in self._timers:
-                self._timers[path].cancel()
-            timer = threading.Timer(self._delay, self._fire, args=[path])
-            self._timers[path] = timer
-            timer.start()
+    async def add(self, event_type: str, path: str) -> None:
+        """Thêm event vào pending queue."""
+        async with self._lock:
+            self._pending[path] = (event_type, time.monotonic())
 
-    def _fire(self, path: str) -> None:
-        """Gọi callback sau khi debounce xong."""
-        with self._lock:
-            self._timers.pop(path, None)
-        try:
-            self._callback(path)
-        except Exception as exc:
-            logger.error(
-                json.dumps(
-                    {"op": "debounce_fire", "path": path, "error": str(exc)},
-                    ensure_ascii=False,
-                )
-            )
+    async def flush(self) -> list[dict[str, Any]]:
+        """
+        Lấy các events đã qua debounce window.
 
-    def cancel_all(self) -> None:
-        """Hủy tất cả timers đang chờ."""
-        with self._lock:
-            for timer in self._timers.values():
-                timer.cancel()
-            self._timers.clear()
+        Returns:
+            List events sẵn sàng xử lý
+        """
+        now = time.monotonic()
+        ready = []
+        async with self._lock:
+            expired_keys = [
+                path
+                for path, (_, ts) in self._pending.items()
+                if now - ts >= self._debounce
+            ]
+            for path in expired_keys:
+                event_type, _ = self._pending.pop(path)
+                ready.append({"event": event_type, "path": path})
+        return ready
 
 
-class MedicalDocHandler(FileSystemEventHandler):
+class MedicalFileHandler(FileSystemEventHandler):
     """
-    Xử lý file system events từ watchdog.
-    Debounce 3s trước khi đưa vào event queue.
+    Xử lý sự kiện file từ watchdog.
+
+    Lọc file tạm, whitelist path, đưa vào event queue.
     """
 
     def __init__(
         self,
-        event_queue: queue.Queue,
-        debounce_seconds: float = WATCHER_DEBOUNCE_SECONDS,
+        root_path: Path,
+        ignore_patterns: list[str],
+        min_size_bytes: int,
+        event_queue: asyncio.Queue,
+        loop: asyncio.AbstractEventLoop,
     ) -> None:
         super().__init__()
+        self._root = root_path
+        self._ignore_patterns = [re.compile(p.replace("*", ".*")) for p in ignore_patterns]
+        self._min_size = min_size_bytes
         self._queue = event_queue
-        self._debouncer = _DebounceTimer(debounce_seconds, self._enqueue)
-        self._pending_event_type: dict[str, str] = {}  # path → event_type
-        self._lock = threading.Lock()
+        self._loop = loop
+
+    def _should_ignore(self, path: str) -> bool:
+        """Kiểm tra file có nên bỏ qua không."""
+        name = Path(path).name
+        # Kiểm tra ignore patterns
+        for pattern in self._ignore_patterns:
+            if pattern.match(name):
+                return True
+        # Kiểm tra whitelist path
+        try:
+            Path(path).relative_to(self._root)
+        except ValueError:
+            logger.warning("Path ngoài whitelist, bỏ qua: %s", path)
+            return True
+        return False
+
+    def _is_valid_file(self, path: str) -> bool:
+        """Kiểm tra file tồn tại và đủ kích thước."""
+        try:
+            size = os.path.getsize(path)
+            return size >= self._min_size
+        except OSError:
+            return False
+
+    def _enqueue(self, event_type: str, path: str) -> None:
+        """Đưa event vào async queue (thread-safe)."""
+        if self._should_ignore(path):
+            return
+        if event_type in ("created", "modified") and not self._is_valid_file(path):
+            return
+
+        event = {
+            "event": event_type,
+            "path": path,
+            "ts": _now_iso(),
+            "size_bytes": self._get_size(path),
+        }
+        # Thread-safe: gọi từ watchdog thread sang asyncio loop
+        self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
+
+    def _get_size(self, path: str) -> int:
+        """Lấy kích thước file, trả 0 nếu lỗi."""
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return 0
 
     def on_created(self, event: FileSystemEvent) -> None:
-        if event.is_directory:
-            return
-        path = Path(event.src_path)
-        if _should_watch(path):
-            with self._lock:
-                self._pending_event_type[str(path)] = "created"
-            self._debouncer.trigger(str(path))
+        if not event.is_directory:
+            self._enqueue("created", event.src_path)
 
     def on_modified(self, event: FileSystemEvent) -> None:
-        if event.is_directory:
-            return
-        path = Path(event.src_path)
-        if _should_watch(path):
-            with self._lock:
-                # Không ghi đè "created" bằng "modified"
-                if str(path) not in self._pending_event_type:
-                    self._pending_event_type[str(path)] = "modified"
-            self._debouncer.trigger(str(path))
+        if not event.is_directory:
+            self._enqueue("modified", event.src_path)
 
-    def on_moved(self, event: FileMovedEvent) -> None:
-        if event.is_directory:
-            return
-        dest = Path(event.dest_path)
-        if _should_watch(dest):
-            with self._lock:
-                self._pending_event_type[str(dest)] = "created"
-            self._debouncer.trigger(str(dest))
-
-    def _enqueue(self, path_str: str) -> None:
-        """Đưa event vào queue sau debounce."""
-        with self._lock:
-            event_type = self._pending_event_type.pop(path_str, "modified")
-        path = Path(path_str)
-        if path.exists():
-            self._queue.put({"type": event_type, "path": path_str})
-            logger.info("Event queued: [%s] %s", event_type, path.name)
+    def on_moved(self, event: FileSystemEvent) -> None:
+        if not event.is_directory:
+            self._enqueue("created", event.dest_path)
 
 
-class FileEventProcessor(threading.Thread):
+class MedicalWatcher:
     """
-    Worker thread xử lý events từ queue.
-    Gọi index_store.upsert_file() + log_event() + optional callback.
+    Daemon theo dõi ~/MedicalDevices và xử lý events.
+
+    Ví dụ sử dụng:
+        watcher = MedicalWatcher("config.yaml")
+        await watcher.run()
     """
 
-    def __init__(
-        self,
-        event_queue: queue.Queue,
-        on_new_file: Optional[Callable[[str, str], None]] = None,
-    ) -> None:
-        super().__init__(daemon=True, name="FileEventProcessor")
-        self._queue = event_queue
-        self._on_new_file = on_new_file  # callback(path, sha256)
-        self._stop_event = threading.Event()
+    def __init__(self, config_path: str = "config.yaml") -> None:
+        self._config = _load_config(config_path)
+        self._root = _expand_path(self._config["paths"]["medical_devices_root"])
+        self._log_dir = _expand_path(self._config["paths"]["log_dir"])
+        self._debounce = self._config["watcher"]["debounce_seconds"]
+        self._ignore = self._config["watcher"]["ignore_patterns"]
+        self._min_size = self._config["watcher"]["min_file_size_bytes"]
+        self._event_queue: asyncio.Queue = asyncio.Queue()
+        self._debouncer = EventDebouncer(self._debounce)
+        self._running = False
 
-    def run(self) -> None:
-        logger.info("FileEventProcessor bắt đầu chạy")
-        while not self._stop_event.is_set():
-            try:
-                event = self._queue.get(timeout=1.0)
-                self._process(event)
-                self._queue.task_done()
-            except queue.Empty:
-                continue
-            except Exception as exc:
-                logger.error(
-                    json.dumps(
-                        {"op": "processor_run", "error": str(exc)},
-                        ensure_ascii=False,
-                    )
-                )
+    def _setup_logging(self) -> None:
+        """Cấu hình logging JSON Lines."""
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = self._log_dir / "watcher.jsonl"
 
-    def _process(self, event: dict) -> None:
-        """Xử lý một event: index file + log."""
-        path_str = event["path"]
-        event_type = event["type"]
-        path = Path(path_str)
+        # Handler ghi file JSON Lines
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter("%(message)s"))
 
+        # Handler console
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        )
+
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.INFO)
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
+
+    def _log_event(self, event: dict[str, Any]) -> None:
+        """Ghi event ra log file JSON Lines."""
+        log_file = self._log_dir / "watcher.jsonl"
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    async def _process_event(self, event: dict[str, Any]) -> None:
+        """
+        Xử lý một event file.
+
+        Hiện tại: log event. Phase 2 sẽ gọi classifier + bot.
+        """
         try:
-            if not path.exists():
-                logger.warning("File không còn tồn tại: %s", path_str)
-                return
-
-            # Tính sha256 + upsert vào DB
-            sha256 = upsert_file(path)
-
-            # Log event
-            log_event(event_type, path_str, sha256)
-
+            self._log_event(event)
             logger.info(
-                "Đã xử lý [%s] %s (sha256=%s)",
-                event_type,
-                path.name,
-                sha256[:8],
+                "📄 Event: %s — %s (%d bytes)",
+                event["event"],
+                Path(event["path"]).name,
+                event.get("size_bytes", 0),
             )
+            # TODO Phase 2: gọi classifier.py + telegram_bot.py
+        except Exception as e:
+            # Không crash daemon
+            logger.error("Lỗi xử lý event %s: %s", event.get("path"), e)
 
-            # Gọi callback nếu có (vd: trigger classifier)
-            if self._on_new_file and event_type in ("created", "modified"):
+    async def _consumer(self) -> None:
+        """Vòng lặp consumer: lấy events từ queue, debounce, xử lý."""
+        while self._running:
+            try:
+                # Lấy event từ queue (timeout để kiểm tra running)
                 try:
-                    self._on_new_file(path_str, sha256)
-                except Exception as cb_exc:
-                    logger.error(
-                        json.dumps(
-                            {"op": "on_new_file_callback", "path": path_str, "error": str(cb_exc)},
-                            ensure_ascii=False,
-                        )
-                    )
+                    event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
+                    await self._debouncer.add(event["event"], event["path"])
+                    # Cập nhật size/ts từ event gốc
+                except asyncio.TimeoutError:
+                    pass
 
-        except Exception as exc:
-            logger.error(
-                json.dumps(
-                    {"op": "process_event", "path": path_str, "event_type": event_type, "error": str(exc)},
-                    ensure_ascii=False,
-                )
-            )
+                # Flush events đã qua debounce window
+                ready_events = await self._debouncer.flush()
+                for evt in ready_events:
+                    # Lấy lại size từ file thực tế
+                    try:
+                        evt["size_bytes"] = os.path.getsize(evt["path"])
+                    except OSError:
+                        evt["size_bytes"] = 0
+                    evt["ts"] = _now_iso()
+                    await self._process_event(evt)
 
-    def stop(self) -> None:
-        self._stop_event.set()
+            except Exception as e:
+                logger.error("Lỗi consumer loop: %s", e)
+                await asyncio.sleep(1)
 
+    async def run(self) -> None:
+        """Khởi động watcher daemon."""
+        self._setup_logging()
 
-class MedicalDocWatcher:
-    """
-    Watcher chính: khởi động watchdog Observer + FileEventProcessor.
-    Interface đơn giản: start() / stop().
-    """
+        if not self._root.exists():
+            logger.warning("Thư mục chưa tồn tại, tạo mới: %s", self._root)
+            self._root.mkdir(parents=True, exist_ok=True)
 
-    def __init__(
-        self,
-        watch_dir: Path = BASE_DIR,
-        on_new_file: Optional[Callable[[str, str], None]] = None,
-        debounce_seconds: float = WATCHER_DEBOUNCE_SECONDS,
-    ) -> None:
-        self._watch_dir = watch_dir
-        self._event_queue: queue.Queue = queue.Queue()
-        self._handler = MedicalDocHandler(self._event_queue, debounce_seconds)
-        self._observer = Observer()
-        self._processor = FileEventProcessor(self._event_queue, on_new_file)
+        logger.info("🚀 MedicalWatcher khởi động")
+        logger.info("📁 Watch path: %s", self._root)
+        logger.info("⏱️  Debounce: %ss", self._debounce)
 
-    def start(self) -> None:
-        """Khởi động watcher."""
-        init_db()
-        self._watch_dir.mkdir(parents=True, exist_ok=True)
-        self._observer.schedule(self._handler, str(self._watch_dir), recursive=True)
-        self._observer.start()
-        self._processor.start()
-        logger.info("Watcher đang theo dõi: %s", self._watch_dir)
+        loop = asyncio.get_event_loop()
+        handler = MedicalFileHandler(
+            root_path=self._root,
+            ignore_patterns=self._ignore,
+            min_size_bytes=self._min_size,
+            event_queue=self._event_queue,
+            loop=loop,
+        )
 
-    def stop(self) -> None:
-        """Dừng watcher gracefully."""
-        self._handler._debouncer.cancel_all()
-        self._observer.stop()
-        self._observer.join()
-        self._processor.stop()
-        logger.info("Watcher đã dừng")
+        observer = Observer()
+        observer.schedule(handler, str(self._root), recursive=True)
+        observer.start()
+        self._running = True
 
-    def run_forever(self) -> None:
-        """Chạy watcher cho đến khi nhận KeyboardInterrupt."""
-        self.start()
+        # Xử lý Ctrl+C
+        def _shutdown(sig, frame):
+            logger.info("🛑 Nhận signal %s, dừng watcher...", sig)
+            self._running = False
+            observer.stop()
+
+        signal.signal(signal.SIGINT, _shutdown)
+        signal.signal(signal.SIGTERM, _shutdown)
+
         try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("Nhận Ctrl+C, đang dừng watcher...")
+            await self._consumer()
         finally:
-            self.stop()
+            observer.stop()
+            observer.join()
+            logger.info("✅ Watcher đã dừng")
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+def main() -> None:
+    """Entry point cho watcher daemon."""
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+    watcher = MedicalWatcher(config_path)
+    asyncio.run(watcher.run())
+
+
 if __name__ == "__main__":
-    setup_logging()
-    logger.info("=== MedicalDocBot Watcher ===")
-    logger.info("Thư mục theo dõi: %s", BASE_DIR)
-    watcher = MedicalDocWatcher()
-    watcher.run_forever()
+    main()

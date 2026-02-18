@@ -1,350 +1,348 @@
 """
-index_store.py — SQLite store cho MedicalDocBot
-Ghi nhận file, doc_type, sha256, timestamps. Idempotent (upsert theo sha256).
-Mọi lỗi được log JSON, không crash daemon.
+index_store.py — SQLite index cho tài liệu thiết bị y tế.
+
+Lưu trữ metadata file: path, sha256, doc_type, device_slug,
+category_slug, timestamps. Hỗ trợ async với aiosqlite.
+Idempotent: upsert theo path (không tạo duplicate).
 """
 
+from __future__ import annotations
+
 import hashlib
-import json
 import logging
-import sqlite3
-from contextlib import contextmanager
+import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Generator, Optional
+from typing import Any
 
-from app.config import DB_PATH, assert_within_base_dir
+import aiosqlite
 
-logger = logging.getLogger("medicalbot.index_store")
+logger = logging.getLogger(__name__)
 
-# ── Schema SQL ────────────────────────────────────────────────────────────────
-_DDL = """
+# Schema SQLite
+_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS files (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    sha256       TEXT    UNIQUE NOT NULL,
-    path         TEXT    NOT NULL,
+    path         TEXT    NOT NULL UNIQUE,
+    sha256       TEXT    NOT NULL,
+    doc_type     TEXT    NOT NULL DEFAULT 'khac',
     device_slug  TEXT,
-    doc_type     TEXT,
     category_slug TEXT,
     group_slug   TEXT,
-    size_bytes   INTEGER,
-    created_at   TEXT,
-    updated_at   TEXT,
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    confirmed    INTEGER NOT NULL DEFAULT 0,  -- 0: chờ confirm, 1: đã confirm
+    created_at   TEXT    NOT NULL,
+    updated_at   TEXT    NOT NULL,
     indexed_at   TEXT    NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_files_device_slug  ON files(device_slug);
-CREATE INDEX IF NOT EXISTS idx_files_doc_type     ON files(doc_type);
-CREATE INDEX IF NOT EXISTS idx_files_category     ON files(category_slug);
+CREATE INDEX IF NOT EXISTS idx_doc_type      ON files(doc_type);
+CREATE INDEX IF NOT EXISTS idx_device_slug   ON files(device_slug);
+CREATE INDEX IF NOT EXISTS idx_category_slug ON files(category_slug);
+CREATE INDEX IF NOT EXISTS idx_sha256        ON files(sha256);
 
 CREATE TABLE IF NOT EXISTS events (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_type   TEXT    NOT NULL,   -- created | modified | deleted | classified
-    path         TEXT    NOT NULL,
-    sha256       TEXT,
-    metadata     TEXT,               -- JSON blob cho thông tin thêm
-    timestamp    TEXT    NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_events_path      ON events(path);
-CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
-
-CREATE TABLE IF NOT EXISTS pending_classification (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    sha256       TEXT    UNIQUE NOT NULL,
-    path         TEXT    NOT NULL,
-    device_slug  TEXT,
-    created_at   TEXT    NOT NULL,
-    telegram_msg_id INTEGER         -- message_id Telegram đang chờ confirm
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT    NOT NULL,  -- created, modified, deleted
+    file_path  TEXT    NOT NULL,
+    ts         TEXT    NOT NULL,
+    processed  INTEGER NOT NULL DEFAULT 0
 );
 """
 
 
-@contextmanager
-def _get_conn(db_path: Path = DB_PATH) -> Generator[sqlite3.Connection, None, None]:
-    """Context manager trả connection SQLite với WAL mode."""
-    conn = sqlite3.connect(str(db_path), check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
 def _now_iso() -> str:
-    """Trả timestamp ISO 8601 UTC hiện tại."""
+    """Trả về timestamp ISO 8601 UTC hiện tại."""
     return datetime.now(timezone.utc).isoformat()
 
 
-def init_db(db_path: Path = DB_PATH) -> None:
-    """Khởi tạo schema SQLite. Idempotent — chạy lại không tạo duplicate."""
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    with _get_conn(db_path) as conn:
-        conn.executescript(_DDL)
-    logger.info("SQLite DB khởi tạo tại: %s", db_path)
-
-
-def compute_sha256(file_path: Path, chunk_size: int = 65536) -> str:
+def compute_sha256(file_path: str | Path) -> str:
     """
-    Tính SHA-256 của file theo từng chunk (tránh OOM với file lớn).
-    
+    Tính SHA256 của file.
+
     Args:
         file_path: Đường dẫn file
-        chunk_size: Kích thước chunk đọc (bytes)
-        
+
     Returns:
-        Chuỗi hex SHA-256
+        Chuỗi hex SHA256
     """
-    h = hashlib.sha256()
+    sha = hashlib.sha256()
     with open(file_path, "rb") as f:
-        while chunk := f.read(chunk_size):
-            h.update(chunk)
-    return h.hexdigest()
+        for chunk in iter(lambda: f.read(65536), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
 
 
-def upsert_file(
-    file_path: Path,
-    device_slug: Optional[str] = None,
-    doc_type: Optional[str] = None,
-    category_slug: Optional[str] = None,
-    group_slug: Optional[str] = None,
-    db_path: Path = DB_PATH,
-) -> str:
+class IndexStore:
     """
-    Upsert thông tin file vào bảng files.
-    Nếu sha256 đã tồn tại → update path + metadata.
-    
-    Args:
-        file_path: Đường dẫn tuyệt đối của file
-        device_slug: Slug thiết bị (nếu đã biết)
-        doc_type: Loại tài liệu (nếu đã phân loại)
-        category_slug: Slug danh mục
-        group_slug: Slug nhóm thiết bị
-        db_path: Đường dẫn SQLite DB
-        
-    Returns:
-        sha256 của file
-        
-    Raises:
-        ValueError: Nếu file nằm ngoài whitelist
+    SQLite index store cho tài liệu thiết bị y tế.
+
+    Ví dụ sử dụng:
+        store = IndexStore("data/medicalbot.db")
+        await store.init()
+        await store.upsert_file(path="/path/to/file.pdf", sha256="abc...", doc_type="ky_thuat")
+        files = await store.search(doc_type="ky_thuat", device_slug="x_quang_ge_optima_xr220_standard")
     """
-    try:
-        assert_within_base_dir(file_path)
-        sha256 = compute_sha256(file_path)
-        stat = file_path.stat()
+
+    def __init__(self, db_path: str | Path) -> None:
+        """
+        Khởi tạo IndexStore.
+
+        Args:
+            db_path: Đường dẫn file SQLite
+        """
+        self._db_path = Path(db_path)
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    async def init(self) -> None:
+        """Tạo schema nếu chưa có."""
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.executescript(_SCHEMA_SQL)
+            await db.commit()
+        logger.info("IndexStore khởi tạo: %s", self._db_path)
+
+    async def upsert_file(
+        self,
+        path: str | Path,
+        sha256: str,
+        doc_type: str = "khac",
+        device_slug: str | None = None,
+        category_slug: str | None = None,
+        group_slug: str | None = None,
+        size_bytes: int | None = None,
+        confirmed: bool = False,
+    ) -> int:
+        """
+        Thêm hoặc cập nhật record file (idempotent theo path).
+
+        Args:
+            path: Đường dẫn tuyệt đối của file
+            sha256: Hash SHA256 của file
+            doc_type: Loại tài liệu (ky_thuat, hop_dong, ...)
+            device_slug: Slug thiết bị
+            category_slug: Slug category
+            group_slug: Slug group
+            size_bytes: Kích thước file (bytes)
+            confirmed: Đã được user confirm chưa
+
+        Returns:
+            ID của record (mới hoặc cập nhật)
+        """
+        path_str = str(path)
         now = _now_iso()
 
-        with _get_conn(db_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO files
-                    (sha256, path, device_slug, doc_type, category_slug, group_slug,
-                     size_bytes, created_at, updated_at, indexed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(sha256) DO UPDATE SET
-                    path          = excluded.path,
-                    device_slug   = COALESCE(excluded.device_slug, files.device_slug),
-                    doc_type      = COALESCE(excluded.doc_type, files.doc_type),
-                    category_slug = COALESCE(excluded.category_slug, files.category_slug),
-                    group_slug    = COALESCE(excluded.group_slug, files.group_slug),
-                    size_bytes    = excluded.size_bytes,
-                    updated_at    = excluded.updated_at,
-                    indexed_at    = excluded.indexed_at
-                """,
-                (
-                    sha256,
-                    str(file_path),
-                    device_slug,
-                    doc_type,
-                    category_slug,
-                    group_slug,
-                    stat.st_size,
-                    datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
-                    datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                    now,
-                ),
-            )
+        # Tự động lấy size nếu không truyền
+        if size_bytes is None:
+            try:
+                size_bytes = os.path.getsize(path_str)
+            except OSError:
+                size_bytes = 0
 
-        logger.debug("Upsert file: %s (sha256=%s)", file_path.name, sha256[:8])
-        return sha256
+        async with aiosqlite.connect(self._db_path) as db:
+            # Kiểm tra đã tồn tại chưa
+            async with db.execute(
+                "SELECT id, created_at FROM files WHERE path = ?", (path_str,)
+            ) as cursor:
+                existing = await cursor.fetchone()
 
-    except Exception as exc:
-        _log_error("upsert_file", str(file_path), exc)
-        raise
-
-
-def update_doc_type(sha256: str, doc_type: str, db_path: Path = DB_PATH) -> None:
-    """Cập nhật doc_type cho file đã index (sau khi user confirm qua Telegram)."""
-    try:
-        with _get_conn(db_path) as conn:
-            conn.execute(
-                "UPDATE files SET doc_type = ?, updated_at = ? WHERE sha256 = ?",
-                (doc_type, _now_iso(), sha256),
-            )
-        logger.info("Cập nhật doc_type='%s' cho sha256=%s", doc_type, sha256[:8])
-    except Exception as exc:
-        _log_error("update_doc_type", sha256, exc)
-        raise
-
-
-def log_event(
-    event_type: str,
-    path: str,
-    sha256: Optional[str] = None,
-    metadata: Optional[dict] = None,
-    db_path: Path = DB_PATH,
-) -> None:
-    """
-    Ghi event vào bảng events (watcher, classification, v.v.)
-    Không raise exception — chỉ log lỗi.
-    """
-    try:
-        with _get_conn(db_path) as conn:
-            conn.execute(
-                "INSERT INTO events (event_type, path, sha256, metadata, timestamp) VALUES (?,?,?,?,?)",
-                (
-                    event_type,
-                    path,
-                    sha256,
-                    json.dumps(metadata, ensure_ascii=False) if metadata else None,
-                    _now_iso(),
-                ),
-            )
-    except Exception as exc:
-        _log_error("log_event", path, exc)
-
-
-def get_file_by_sha256(sha256: str, db_path: Path = DB_PATH) -> Optional[dict]:
-    """Tra cứu file theo sha256. Trả None nếu không tìm thấy."""
-    try:
-        with _get_conn(db_path) as conn:
-            row = conn.execute(
-                "SELECT * FROM files WHERE sha256 = ?", (sha256,)
-            ).fetchone()
-        return dict(row) if row else None
-    except Exception as exc:
-        _log_error("get_file_by_sha256", sha256, exc)
-        return None
-
-
-def get_files_by_device(
-    device_slug: str,
-    doc_type: Optional[str] = None,
-    db_path: Path = DB_PATH,
-) -> list[dict]:
-    """
-    Lấy danh sách file của một thiết bị.
-    Có thể filter thêm theo doc_type.
-    """
-    try:
-        with _get_conn(db_path) as conn:
-            if doc_type:
-                rows = conn.execute(
-                    "SELECT * FROM files WHERE device_slug = ? AND doc_type = ? ORDER BY updated_at DESC",
-                    (device_slug, doc_type),
-                ).fetchall()
+            if existing:
+                # Cập nhật record hiện có
+                await db.execute(
+                    """
+                    UPDATE files SET
+                        sha256 = ?, doc_type = ?, device_slug = ?,
+                        category_slug = ?, group_slug = ?,
+                        size_bytes = ?, confirmed = ?, updated_at = ?, indexed_at = ?
+                    WHERE path = ?
+                    """,
+                    (
+                        sha256, doc_type, device_slug,
+                        category_slug, group_slug,
+                        size_bytes, int(confirmed), now, now,
+                        path_str,
+                    ),
+                )
+                record_id = existing[0]
+                logger.debug("Cập nhật file: %s (id=%d)", path_str, record_id)
             else:
-                rows = conn.execute(
-                    "SELECT * FROM files WHERE device_slug = ? ORDER BY updated_at DESC",
-                    (device_slug,),
-                ).fetchall()
-        return [dict(r) for r in rows]
-    except Exception as exc:
-        _log_error("get_files_by_device", device_slug, exc)
-        return []
+                # Thêm record mới
+                cursor = await db.execute(
+                    """
+                    INSERT INTO files
+                        (path, sha256, doc_type, device_slug, category_slug, group_slug,
+                         size_bytes, confirmed, created_at, updated_at, indexed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        path_str, sha256, doc_type, device_slug,
+                        category_slug, group_slug,
+                        size_bytes, int(confirmed), now, now, now,
+                    ),
+                )
+                record_id = cursor.lastrowid
+                logger.debug("Thêm file mới: %s (id=%d)", path_str, record_id)
 
+            await db.commit()
 
-def add_pending_classification(
-    sha256: str,
-    path: str,
-    device_slug: Optional[str] = None,
-    db_path: Path = DB_PATH,
-) -> None:
-    """Thêm file vào hàng đợi chờ phân loại doc_type qua Telegram."""
-    try:
-        with _get_conn(db_path) as conn:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO pending_classification
-                    (sha256, path, device_slug, created_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (sha256, path, device_slug, _now_iso()),
-            )
-    except Exception as exc:
-        _log_error("add_pending_classification", path, exc)
+        return record_id
 
+    async def get_file(self, path: str | Path) -> dict[str, Any] | None:
+        """
+        Lấy thông tin file theo path.
 
-def remove_pending_classification(sha256: str, db_path: Path = DB_PATH) -> None:
-    """Xóa file khỏi hàng đợi sau khi đã phân loại xong."""
-    try:
-        with _get_conn(db_path) as conn:
-            conn.execute(
-                "DELETE FROM pending_classification WHERE sha256 = ?", (sha256,)
-            )
-    except Exception as exc:
-        _log_error("remove_pending_classification", sha256, exc)
+        Args:
+            path: Đường dẫn file
 
+        Returns:
+            Dict thông tin file hoặc None nếu không tìm thấy
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM files WHERE path = ?", (str(path),)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return dict(row) if row else None
 
-def _log_error(operation: str, context: str, exc: Exception) -> None:
-    """Ghi lỗi dạng JSON log (không crash)."""
-    logger.error(
-        json.dumps(
-            {
-                "operation": operation,
-                "context": context,
-                "error": str(exc),
-                "type": type(exc).__name__,
-            },
-            ensure_ascii=False,
+    async def search(
+        self,
+        doc_type: str | None = None,
+        device_slug: str | None = None,
+        category_slug: str | None = None,
+        keyword: str | None = None,
+        confirmed_only: bool = False,
+        limit: int = 20,
+        order_by: str = "updated_at DESC",
+    ) -> list[dict[str, Any]]:
+        """
+        Tìm kiếm files theo các tiêu chí.
+
+        Args:
+            doc_type: Lọc theo loại tài liệu
+            device_slug: Lọc theo thiết bị
+            category_slug: Lọc theo category
+            keyword: Tìm trong path (LIKE)
+            confirmed_only: Chỉ lấy files đã confirm
+            limit: Số kết quả tối đa
+            order_by: Cột và chiều sắp xếp
+
+        Returns:
+            List các dict thông tin file
+        """
+        conditions = []
+        params: list[Any] = []
+
+        if doc_type:
+            conditions.append("doc_type = ?")
+            params.append(doc_type)
+        if device_slug:
+            conditions.append("device_slug = ?")
+            params.append(device_slug)
+        if category_slug:
+            conditions.append("category_slug = ?")
+            params.append(category_slug)
+        if keyword:
+            conditions.append("path LIKE ?")
+            params.append(f"%{keyword}%")
+        if confirmed_only:
+            conditions.append("confirmed = 1")
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        sql = f"SELECT * FROM files {where} ORDER BY {order_by} LIMIT ?"
+        params.append(limit)
+
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(sql, params) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def get_latest_by_device_and_type(
+        self, device_slug: str, doc_type: str
+    ) -> dict[str, Any] | None:
+        """
+        Lấy file mới nhất của thiết bị theo doc_type.
+
+        Args:
+            device_slug: Slug thiết bị
+            doc_type: Loại tài liệu
+
+        Returns:
+            Dict thông tin file mới nhất hoặc None
+        """
+        results = await self.search(
+            device_slug=device_slug,
+            doc_type=doc_type,
+            confirmed_only=True,
+            limit=1,
+            order_by="updated_at DESC",
         )
-    )
+        return results[0] if results else None
 
+    async def count_by_device(self, device_slug: str) -> dict[str, int]:
+        """
+        Đếm số file theo doc_type cho một thiết bị.
 
-# ── CLI test nhanh ────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    import sys
-    import tempfile
+        Args:
+            device_slug: Slug thiết bị
 
-    logging.basicConfig(level=logging.DEBUG)
+        Returns:
+            Dict {doc_type: count}
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            async with db.execute(
+                """
+                SELECT doc_type, COUNT(*) as cnt
+                FROM files
+                WHERE device_slug = ?
+                GROUP BY doc_type
+                """,
+                (device_slug,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return {row[0]: row[1] for row in rows}
 
-    with tempfile.TemporaryDirectory() as tmp:
-        test_db = Path(tmp) / "test.db"
-        init_db(test_db)
-        print("✓ init_db OK")
+    async def log_event(self, event_type: str, file_path: str) -> None:
+        """
+        Ghi log sự kiện watcher vào DB.
 
-        # Tạo file test
-        test_file = Path(tmp) / "test.pdf"
-        test_file.write_bytes(b"PDF content test")
+        Args:
+            event_type: Loại event (created, modified, deleted)
+            file_path: Đường dẫn file
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "INSERT INTO events (event_type, file_path, ts) VALUES (?, ?, ?)",
+                (event_type, file_path, _now_iso()),
+            )
+            await db.commit()
 
-        # Patch whitelist để test
-        import app.config as cfg
-        original_base = cfg.BASE_DIR
-        cfg.BASE_DIR = Path(tmp)
+    async def stats(self) -> dict[str, Any]:
+        """
+        Thống kê tổng quan index.
 
-        sha = upsert_file(test_file, device_slug="test_device", db_path=test_db)
-        print(f"✓ upsert_file: sha256={sha[:8]}...")
+        Returns:
+            Dict thống kê: total_files, by_doc_type, by_category
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            # Tổng số files
+            async with db.execute("SELECT COUNT(*) FROM files") as cur:
+                total = (await cur.fetchone())[0]
 
-        row = get_file_by_sha256(sha, test_db)
-        assert row is not None
-        assert row["device_slug"] == "test_device"
-        print("✓ get_file_by_sha256 OK")
+            # Theo doc_type
+            async with db.execute(
+                "SELECT doc_type, COUNT(*) FROM files GROUP BY doc_type"
+            ) as cur:
+                by_type = {row[0]: row[1] for row in await cur.fetchall()}
 
-        update_doc_type(sha, "ky_thuat", test_db)
-        row2 = get_file_by_sha256(sha, test_db)
-        assert row2["doc_type"] == "ky_thuat"
-        print("✓ update_doc_type OK")
+            # Theo category
+            async with db.execute(
+                "SELECT category_slug, COUNT(*) FROM files WHERE category_slug IS NOT NULL GROUP BY category_slug"
+            ) as cur:
+                by_cat = {row[0]: row[1] for row in await cur.fetchall()}
 
-        log_event("created", str(test_file), sha, {"test": True}, test_db)
-        print("✓ log_event OK")
-
-        cfg.BASE_DIR = original_base
-
-    print("\n✓ index_store.py OK")
-    sys.exit(0)
+        return {
+            "total_files": total,
+            "by_doc_type": by_type,
+            "by_category": by_cat,
+        }

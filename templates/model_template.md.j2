@@ -1,79 +1,26 @@
-{#- 
-  model_template.md.j2 — Template wiki cho thiết bị y tế
-  Dùng marker <!-- DOC_SECTION:xxx --> để wiki_generator.py update đúng section
-  Không xóa marker — đây là anchor để update idempotent
--#}
----
-slug: "{{ slug }}"
-vendor: "{{ vendor | default('') }}"
-model: "{{ model | default('') }}"
-category_id: "{{ category_id | default('') }}"
-category_slug: "{{ category_slug | default('') }}"
-risk_class: "{{ risk_class | default('') }}"
-year: {{ year | default('') }}
-hs_code: "{{ hs_code | default('') }}"
-status: "{{ status | default('Hoạt động') }}"
-power_kw: {{ power_kw | default('') }}
-weight_kg: {{ weight_kg | default('') }}
-generated_at: "{{ generated_at }}"
----
+<!-- AUTO-GENERATED: DO NOT EDIT BELOW -->
+## 📊 Bảng tóm tắt tài liệu
 
-# {{ model | default(slug) }}{% if vendor %} — {{ vendor }}{% endif %}
+| Loại tài liệu | Số file | File mới nhất |
+|---------------|---------|---------------|
+{% for doc_type, label in doc_type_labels.items() %}
+{% set count = counts.get(doc_type, 0) %}
+{% set last = latest.get(doc_type, '—') %}
+| {{ label }} | {{ count }} | {{ last }} |
+{% endfor %}
 
-> **Danh mục:** {{ category_slug | default('') }}  
-> **Trạng thái:** {{ status | default('Hoạt động') }}  
-> **Năm:** {{ year | default('') }}  
-> **Mã HS:** {{ hs_code | default('') }}  
-> **Phân loại rủi ro:** {{ risk_class | default('') }}
-
-## Thông số chính
-
-| Thông số | Giá trị |
-|---|---|
-| Công suất | {% if power_kw %}{{ power_kw }} kW{% else %}—{% endif %} |
-| Trọng lượng | {% if weight_kg %}{{ weight_kg }} kg{% else %}—{% endif %} |
-
-## Tài liệu kỹ thuật
-
-<!-- DOC_SECTION:ky_thuat -->
-_Chưa có tài liệu._
-<!-- /DOC_SECTION:ky_thuat -->
-
-## Cấu hình
-
-<!-- DOC_SECTION:cau_hinh -->
-_Chưa có tài liệu._
-<!-- /DOC_SECTION:cau_hinh -->
-
-## Hợp đồng
-
-<!-- DOC_SECTION:hop_dong -->
-_Chưa có tài liệu._
-<!-- /DOC_SECTION:hop_dong -->
-
-## Báo giá
-
-<!-- DOC_SECTION:bao_gia -->
-_Chưa có tài liệu._
-<!-- /DOC_SECTION:bao_gia -->
-
-## Trúng thầu
-
-<!-- DOC_SECTION:trung_thau -->
-_Chưa có tài liệu._
-<!-- /DOC_SECTION:trung_thau -->
-
-## So sánh
-
-<!-- DOC_SECTION:so_sanh -->
-_Chưa có tài liệu._
-<!-- /DOC_SECTION:so_sanh -->
-
-## Khác
-
-<!-- DOC_SECTION:khac -->
-_Chưa có tài liệu._
-<!-- /DOC_SECTION:khac -->
+> Cập nhật: `{{ updated_at }}`
 
 ---
-_Wiki được sinh tự động bởi MedicalDocBot. Cập nhật lần cuối: {{ generated_at }}_
+
+{% for doc_type, label in doc_type_labels.items() %}
+{% if file_groups.get(doc_type) %}
+### {{ label }}
+
+{% for f in file_groups[doc_type] | sort(attribute='updated_at', reverse=True) %}
+- [{{ f.path | basename }}]({{ f.path }}) — {{ f.size_bytes | format_size }} — `{{ f.updated_at[:10] }}`
+{% endfor %}
+
+{% endif %}
+{% endfor %}
+<!-- AUTO-GENERATED: END -->

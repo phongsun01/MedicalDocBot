@@ -1,49 +1,40 @@
-# Bảo mật — không commit dữ liệu nhạy cảm
-.env
-*.db
-*.sqlite
-*.sqlite3
-
 # Python
+.venv/
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-dist/
+*.pyo
 *.egg-info/
+dist/
+build/
 .eggs/
-pip-wheel-metadata/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
 
-# Virtual environments
-venv/
-.venv/
-env/
-ENV/
+# Environment
+.env
+
+# Database & Cache
+data/medicalbot.db
+data/medicalbot.db-shm
+data/medicalbot.db-wal
 
 # Logs
-logs/*.json
-logs/*.log
-!logs/.gitkeep
+logs/
 
 # macOS
 .DS_Store
 .AppleDouble
 .LSOverride
-Icon?
 ._*
-.Spotlight-V100
-.Trashes
 
-# IDE
-.idea/
+# Editor
 .vscode/
+.idea/
 *.swp
 *.swo
 
-# Cache extract
-.cache/
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Ruff
+.ruff_cache/

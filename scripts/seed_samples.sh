@@ -1,101 +1,138 @@
 #!/usr/bin/env bash
-# seed_samples.sh — Tạo dữ liệu mẫu để test Phase Gate 1
-# Tạo 2 thiết bị mẫu + file PDF giả để test watcher + wiki update
-# Chạy: bash scripts/seed_samples.sh
+# seed_samples.sh — Tạo 2 sample devices để test Phase Gate 1
+# Idempotent: chạy lại không tạo duplicate
+# Golden samples:
+#   - x_quang_ge_optima_xr220_standard
+#   - sieu_am_hitachi_arrietta_60_fulloption
 
 set -euo pipefail
 
+MEDICAL_ROOT="${MEDICAL_DEVICES_ROOT:-$HOME/MedicalDevices}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# Đọc BASE_DIR
-if [[ -f "$PROJECT_ROOT/.env" ]]; then
-    BASE_DIR=$(grep -E '^MEDICAL_DEVICES_DIR=' "$PROJECT_ROOT/.env" | cut -d'=' -f2 | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
-fi
-BASE_DIR="${BASE_DIR:-$HOME/MedicalDevices}"
-
-# Kích hoạt venv nếu có
-if [[ -f "$PROJECT_ROOT/.venv/bin/activate" ]]; then
-    source "$PROJECT_ROOT/.venv/bin/activate"
-fi
-
-cd "$PROJECT_ROOT"
-
-echo "=== MedicalDocBot: Seed Samples ==="
-echo "BASE_DIR: $BASE_DIR"
+echo "🌱 Tạo sample devices cho Phase Gate 1"
+echo "📁 Root: $MEDICAL_ROOT"
 echo ""
 
-# ── Bước 1: Setup taxonomy folders ────────────────────────────────────────────
-echo "[1/4] Setup taxonomy folders..."
-bash "$SCRIPT_DIR/setup_taxonomy_folders.sh"
+# Subfolders chuẩn cho mỗi device
+SUBFOLDERS=("info" "tech" "config" "links" "price" "contracts" "compare" "other")
+
+create_device() {
+    local cat_slug="$1"
+    local group_slug="$2"
+    local device_slug="$3"
+    local vendor="$4"
+    local model="$5"
+    local risk_class="${6:-C}"
+
+    local device_dir="$MEDICAL_ROOT/$cat_slug/$group_slug/$device_slug"
+
+    if [[ -d "$device_dir" ]]; then
+        echo "  ⏭️  Đã tồn tại: $device_slug"
+        return 0
+    fi
+
+    # Tạo thư mục device + subfolders
+    for sub in "${SUBFOLDERS[@]}"; do
+        mkdir -p "$device_dir/$sub"
+    done
+
+    # Tạo device.yaml
+    local now
+    now=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).isoformat())")
+
+    cat > "$device_dir/device.yaml" <<YAML
+vendor: "$vendor"
+model: "$model"
+category_id: "$cat_slug"
+category_slug: "$cat_slug/$group_slug"
+risk_class: "$risk_class"
+year: 2020
+hs_code: ""
+status: "Hoạt động"
+power_kw: 0
+weight_kg: 0
+aliases: []
+links:
+  fda: ""
+  ce: ""
+files:
+  ky_thuat: []
+  cau_hinh: []
+  bao_gia: []
+  trung_thau: []
+  hop_dong: []
+  so_sanh: []
+  khac: []
+created_at: "$now"
+updated_at: "$now"
+YAML
+
+    # Tạo wiki MD placeholder
+    local wiki_dir="$MEDICAL_ROOT/wiki/devices"
+    mkdir -p "$wiki_dir"
+    cat > "$wiki_dir/model_${device_slug}.md" <<MD
+# $model — $vendor
+
+> Device slug: \`$device_slug\`
+> Category: \`$cat_slug/$group_slug\`
+
+<!-- AUTO-GENERATED: DO NOT EDIT BELOW -->
+## 📊 Bảng tóm tắt tài liệu
+
+| Loại tài liệu | Số file | File mới nhất |
+|---------------|---------|---------------|
+| 📋 Kỹ thuật | 0 | — |
+| ⚙️ Cấu hình | 0 | — |
+| 💰 Báo giá | 0 | — |
+| 📝 Hợp đồng | 0 | — |
+| 📁 Khác | 0 | — |
+
+> Cập nhật: \`$now\`
+<!-- AUTO-GENERATED: END -->
+MD
+
+    # Tạo sample files để test watcher
+    echo "Sample tech document for $model" > "$device_dir/tech/sample_manual_vi.txt"
+    echo "Sample config for $model" > "$device_dir/config/sample_config.txt"
+
+    echo "  ✅ Tạo: $device_slug"
+}
+
+# --- Golden Sample 1: X-Quang GE Optima XR220 ---
+create_device \
+    "chan_doan_hinh_anh" \
+    "x_quang" \
+    "x_quang_ge_optima_xr220_standard" \
+    "GE Healthcare" \
+    "Optima XR220" \
+    "C"
+
+# --- Golden Sample 2: Siêu âm Hitachi Arrietta 60 ---
+create_device \
+    "chan_doan_hinh_anh" \
+    "sieu_am" \
+    "sieu_am_hitachi_arrietta_60_fulloption" \
+    "Hitachi" \
+    "Arrietta 60" \
+    "B"
+
 echo ""
-
-# ── Bước 2: Tạo thiết bị mẫu 1 — GE Optima XR220 ─────────────────────────────
-echo "[2/4] Tạo thiết bị mẫu: GE Optima XR220..."
-python -m app.create_device \
-    --category chan_doan_hinh_anh \
-    --group x_quang \
-    --vendor "GE Healthcare" \
-    --model "Optima XR220" \
-    --year 2018 \
-    --risk-class "C" \
-    --hs-code "9022.12.00" \
-    --power-kw "50" \
-    --weight-kg "1200" \
-    --slug "x_quang_ge_optima_xr220_standard"
+echo "✅ seed_samples.sh hoàn thành"
 echo ""
-
-# ── Bước 3: Tạo thiết bị mẫu 2 — Hitachi Arrietta 60 ─────────────────────────
-echo "[3/4] Tạo thiết bị mẫu: Hitachi Arrietta 60..."
-python -m app.create_device \
-    --category chan_doan_hinh_anh \
-    --group sieu_am \
-    --vendor "Hitachi" \
-    --model "Arrietta 60" \
-    --year 2020 \
-    --risk-class "B" \
-    --slug "sieu_am_hitachi_arrietta_60_fulloption"
-echo ""
-
-# ── Bước 4: Tạo file PDF giả để test watcher ──────────────────────────────────
-echo "[4/4] Tạo file PDF mẫu để test watcher..."
-
-DEVICE1_DIR="$BASE_DIR/01_chan_doan_hinh_anh/x_quang/x_quang_ge_optima_xr220_standard"
-DEVICE2_DIR="$BASE_DIR/01_chan_doan_hinh_anh/sieu_am/sieu_am_hitachi_arrietta_60_fulloption"
-
-# Tạo file PDF giả (chỉ để test watcher, không phải PDF thực)
-if [[ -d "$DEVICE1_DIR/tech" ]]; then
-    echo "%PDF-1.4 GE Optima XR220 Technical Manual Sample" > "$DEVICE1_DIR/tech/brochure.pdf"
-    echo "  → $DEVICE1_DIR/tech/brochure.pdf"
-fi
-
-if [[ -d "$DEVICE1_DIR/contracts" ]]; then
-    echo "%PDF-1.4 GE Optima XR220 Contract Sample 2023" > "$DEVICE1_DIR/contracts/hop_dong_2023.pdf"
-    echo "  → $DEVICE1_DIR/contracts/hop_dong_2023.pdf"
-fi
-
-if [[ -d "$DEVICE2_DIR/tech" ]]; then
-    echo "%PDF-1.4 Hitachi Arrietta 60 Brochure Sample" > "$DEVICE2_DIR/tech/brochure.pdf"
-    echo "  → $DEVICE2_DIR/tech/brochure.pdf"
-fi
-
-# ── Sinh wiki indexes ─────────────────────────────────────────────────────────
-echo ""
-echo "Sinh wiki indexes..."
-python -m app.wiki_generator
-
-echo ""
-echo "=== Seed hoàn thành ==="
-echo ""
-echo "Thiết bị đã tạo:"
-echo "  1. x_quang_ge_optima_xr220_standard"
-echo "     → $DEVICE1_DIR"
-echo "  2. sieu_am_hitachi_arrietta_60_fulloption"
-echo "     → $DEVICE2_DIR"
-echo ""
-echo "Wiki indexes:"
-echo "  → $BASE_DIR/wiki/index_categories.md"
-echo "  → $BASE_DIR/wiki/index_groups.md"
-echo ""
-echo "Tiếp theo: chạy watcher để test Phase Gate 1"
-echo "  python -m app.watcher"
+echo "📋 Kiểm tra slug validation:"
+python3 -c "
+import sys
+sys.path.insert(0, '$(dirname "$SCRIPT_DIR")')
+from app.slug import validate, GOLDEN_SAMPLES
+all_ok = True
+for s in GOLDEN_SAMPLES:
+    ok = validate(s)
+    print(f'  {\"✅\" if ok else \"❌\"} {s}')
+    if not ok:
+        all_ok = False
+print()
+print('✅ Tất cả slug hợp lệ' if all_ok else '❌ Có slug không hợp lệ')
+sys.exit(0 if all_ok else 1)
+"

@@ -1,0 +1,131 @@
+# MedicalDocBot — Cấu hình tập trung
+# Chỉnh sửa file này để thay đổi paths, services, feature flags
+
+paths:
+  # Thư mục gốc chứa toàn bộ tài liệu thiết bị y tế
+  medical_devices_root: "~/MedicalDevices"
+  # Thư mục wiki (sinh tự động)
+  wiki_dir: "~/MedicalDevices/wiki"
+  # Thư mục cache kết quả extract
+  extracted_cache_dir: "~/MedicalDevices/.cache/extracted"
+  # Thư mục backup tự động
+  backup_dir: "~/MedicalDevices/.backup"
+  # File taxonomy
+  taxonomy_file: "data/taxonomy.yaml"
+  # File SQLite index
+  db_file: "data/medicalbot.db"
+  # Thư mục logs
+  log_dir: "logs"
+
+watcher:
+  # Debounce: gom events trong N giây trước khi xử lý
+  debounce_seconds: 3
+  # Bỏ qua các pattern này
+  ignore_patterns:
+    - ".DS_Store"
+    - "*.tmp"
+    - "._*"
+    - "Thumbs.db"
+    - "~$*"
+    - "*.~*"
+    - ".git"
+    - ".cache"
+    - ".backup"
+    - "extracted"
+    - "wiki"
+  # Kích thước file tối thiểu để xử lý (bytes) — bỏ qua file rỗng
+  min_file_size_bytes: 100
+
+classifier:
+  # Ngưỡng confidence để auto-suggest (không hỏi user)
+  confidence_threshold: 0.7
+  # Timeout chờ user confirm (giây) — sau đó default 'khac'
+  confirm_timeout_seconds: 300
+  # Subfolders → doc_type mapping (rule-based fallback)
+  subfolder_rules:
+    tech: "ky_thuat"
+    config: "cau_hinh"
+    contracts: "hop_dong"
+    compare: "so_sanh"
+    other: "khac"
+    info: "thong_tin"
+    links: "lien_ket"
+  # Filename keywords → doc_type hints
+  filename_rules:
+    bao_gia: "bao_gia"
+    quotation: "bao_gia"
+    quote: "bao_gia"
+    trung_thau: "trung_thau"
+    award: "trung_thau"
+    contract: "hop_dong"
+    hop_dong: "hop_dong"
+    manual: "ky_thuat"
+    spec: "ky_thuat"
+    config: "cau_hinh"
+    compare: "so_sanh"
+
+wiki:
+  # Tự động sinh wiki khi có file mới được classify
+  auto_generate: true
+  # Template directory
+  template_dir: "templates"
+  # Backup file .bak trước khi ghi đè
+  backup_before_write: true
+
+backup:
+  # Tự động backup file lớn hơn N bytes (10MB)
+  auto_backup_size_bytes: 10485760
+  # Gửi Telegram alert khi backup
+  telegram_alert: true
+
+services:
+  openclaw:
+    enabled: true
+    base_url: "http://localhost:18789"
+    # Timeout HTTP request (giây)
+    timeout_seconds: 30
+    # Số lần retry khi lỗi
+    max_retries: 3
+
+  paperless:
+    enabled: false  # Bật ở Phase 2
+    base_url: "http://localhost:8000"
+    timeout_seconds: 60
+    max_retries: 3
+
+  telegram:
+    # Token lấy từ biến môi trường TELEGRAM_BOT_TOKEN
+    # Admin chat ID lấy từ TELEGRAM_ADMIN_CHAT_ID
+    # Số kết quả tối đa trả về khi search
+    max_search_results: 5
+
+logging:
+  # Level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  # Format: json hoặc text
+  format: "json"
+  # Rotate log sau N ngày
+  rotate_days: 7
+
+# Subfolders chuẩn cho mỗi device
+device_subfolders:
+  - info
+  - tech
+  - config
+  - links
+  - price
+  - contracts
+  - compare
+  - other
+
+# Danh sách doc_type hợp lệ
+valid_doc_types:
+  - ky_thuat
+  - cau_hinh
+  - bao_gia
+  - trung_thau
+  - hop_dong
+  - so_sanh
+  - thong_tin
+  - lien_ket
+  - khac
