@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "medicaldocbot"
+version = "0.1.0"
+description = "Hệ thống quản lý kho tài liệu thiết bị y tế — 100% local, Telegram Bot"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "MedicalDocBot Team" }]
+
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "PyYAML>=6.0.1",
+    "Jinja2>=3.1.4",
+    "watchdog>=4.0.0",
+    "kreuzberg>=0.5.0",
+    "pdfplumber>=0.11.0",
+    "python-docx>=1.1.0",
+    "openpyxl>=3.1.2",
+    "python-telegram-bot>=21.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+
+[project.scripts]
+medicaldocbot-watcher = "app.watcher:main"
+medicaldocbot-bot = "app.telegram_bot:main"
+medicaldocbot-create-device = "app.create_device:main"
+medicaldocbot-wiki = "app.wiki_generator:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,27 @@
+# MedicalDocBot — Python Dependencies
+# Python 3.11+ required
+# Cài đặt: pip install -r requirements.txt
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0        # Load .env
+PyYAML>=6.0.1               # Parse taxonomy.yaml
+Jinja2>=3.1.4               # Template rendering (wiki, device.yaml)
+
+# ── File System Watcher ───────────────────────────────────────────────────────
+watchdog>=4.0.0             # File system events
+
+# ── Document Extraction ───────────────────────────────────────────────────────
+kreuzberg>=0.5.0            # Primary extractor (PDF, DOCX, XLSX, images)
+pdfplumber>=0.11.0          # Fallback PDF extractor
+python-docx>=1.1.0          # Fallback DOCX extractor
+openpyxl>=3.1.2             # Fallback Excel extractor
+
+# ── Telegram Bot ──────────────────────────────────────────────────────────────
+python-telegram-bot>=21.0.0  # Telegram Bot API (async)
+
+# ── Search ────────────────────────────────────────────────────────────────────
+# SQLite FTS5 built-in — không cần thư viện ngoài
+
+# ── Dev / Test ────────────────────────────────────────────────────────────────
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
