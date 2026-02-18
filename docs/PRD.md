@@ -1,6 +1,6 @@
 # PRD: MedicalDocBot — Hệ thống Wiki + Bot quản lý tài liệu thiết bị y tế
 
-**Version**: 1.1 | **Date**: 18/02/2026 | **Owner**: Phong | **Target**: Mac Mini M4 24GB, self-hosted 24/7
+**Version**: 1.2 | **Date**: 18/02/2026 | **Owner**: Phong | **Target**: Mac Mini M4 24GB, self-hosted 24/7
 
 ---
 
@@ -24,10 +24,10 @@
 ```
 Loại (Category) → Nhóm (Group) → Thiết bị (Device)
 ├── chan_doan_hinh_anh/
-│   ├── sieu_am/  → sieu_am_siemens_s2000_standard/
+│   ├── sieu_am/  → sieu_am_hitachi_arrietta_60_fulloption/
 │   └── x_quang/  → x_quang_ge_optima_xr220_standard/
 └── kiem_soat_nhiem_khuan/
-    └── may_tiet_trung/ → autoclave_getinge_gs_series/
+    └── noi_hap/ → autoclave_getinge_gs_series/
 ```
 
 ---
@@ -214,3 +214,7 @@ File mới → watcher.py → sha256 check → kreuzberg extract metadata
 - ✅ Idempotent: mọi script chạy lại không tạo duplicate
 - ✅ Error không crash daemon (try/except + JSON log)
 - ✅ Slug regex: `^[a-z0-9]+(?:_[a-z0-9]+)*$`
+
+**Phân loại (Taxonomy V2)**:
+- **Level 1 (Category)**: `chan_doan_hinh_anh`, `xet_nghiem_huyet_hoc`, `gay_me_may_tho`...
+- **Level 2 (Group)**: `x_quang`, `ct_scanner`, `may_dem_tb_mau`, `may_gay_me`...

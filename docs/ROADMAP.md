@@ -1,4 +1,4 @@
-# Roadmap: MedicalDocBot — "Chậm nhưng chắc"
+# Roadmap: MedicalDocBot — "Chậm nhưng chắc" (Taxonomy V2)
 
 Chiến lược 3 tầng: **Core (nền tảng)** → **MVP (3 UC P0)** → **Nâng cao (OCR/DMS/semantic/voice/stats)**.
 Paperless-ngx để sau MVP vì thêm Docker stack + vận hành; khi pipeline ổn thì API rất mạnh.
@@ -10,12 +10,12 @@ Paperless-ngx để sau MVP vì thêm Docker stack + vận hành; khi pipeline �
 **Mục tiêu**: File vào đúng nơi, wiki sinh đúng cấu trúc, bot chạy 24/7, không hỏng.
 Chưa cần OCR, Paperless, hay semantic search.
 
-### 0.1 Chuẩn hóa taxonomy & thư mục *(0.5–1 ngày)*
+### 0.1 Chuẩn hóa taxonomy & thư mục (V2) *(0.5–1 ngày)*
 
 - Quy ước slug `snake_case`: `chan_doan_hinh_anh/x_quang/x_quang_ge_optima_xr220_standard/`
 - Subfolders chuẩn mỗi device: `info/` `tech/` `config/` `links/` `price/` `contracts/` `compare/` `other/`
 - `device.yaml` tối thiểu: `vendor`, `model`, `category_slug`, `risk_class`, `aliases`
-- Script `setup_taxonomy_folders.sh` sinh cây 25 categories từ `data/taxonomy.yaml`
+- Script `setup-folders.sh` (bash) sinh cây 125+ folders từ `data/taxonomy.yaml` V2
 
 **Deliverable D0a**: 2 "golden sample" devices:
 - `x_quang_ge_optima_xr220_standard`
@@ -151,7 +151,7 @@ Chưa cần Paperless.
 
 | Tuần | Ngày | Việc |
 |------|------|------|
-| **Tuần 1** | 1–2 | Taxonomy + folder + `seed_samples.sh` |
+| **Tuần 1** | 1–2 | Taxonomy V2 + folder + `seed_samples.sh` |
 | | 3 | openClaw 24/7 + Telegram + whitelist |
 | | 4–5 | Watcher + event queue + chống spam |
 | | 6–7 | Kreuzberg baseline extract + cache JSON |

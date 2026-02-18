@@ -15,6 +15,8 @@
 │   │       ├── compare/             ← So sánh
 │   │       └── other/               ← Khác
 │   └── sieu_am/
+└── xet_nghiem_huyet_hoc/
+    └── ...
 └── wiki/
     ├── index_categories.md          ← Auto-generated
     ├── index_groups.md              ← Auto-generated
@@ -57,8 +59,8 @@ File mới → watcher.py
 | Extractor | `app/extractor_kreuzberg.py` | 2 | kreuzberg Python |
 | Search | `app/search.py` | 2 | Paperless + SQLite |
 | Bot | `app/telegram_bot.py` | 2 | python-telegram-bot |
-| openClaw | `app/openclaw_client.py` | 2 | HTTP client Node.js gateway |
-| Paperless | `app/paperless_client.py` | 2 | REST client OCR/DMS |
+| openClaw | `app/openclaw_client.py" | 2 | HTTP client Node.js gateway |
+| Paperless | `app/paperless_client.py" | 2 | REST client OCR/DMS |
 
 ## Constraints
 

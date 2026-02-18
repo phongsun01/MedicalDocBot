@@ -1,4 +1,4 @@
-# USECASES: MedicalDocBot — 10 Use Cases chi tiết
+# USECASES: MedicalDocBot — 10 Use Cases chi tiết (V2.0)
 
 **Hierarchy**: Loại (Category) → Nhóm (Group) → Thiết bị (Device)
 **Ví dụ**: `chan_doan_hinh_anh` → `x_quang` → `x_quang_ge_optima_xr220_standard`
@@ -123,11 +123,10 @@
 **Output**:
 ```
 📊 Thống kê hợp đồng > 10MB — Chẩn đoán hình ảnh
-
 | Thiết bị              | Size  | Ngày ký    |
 |-----------------------|-------|------------|
 | x_quang_ge_optima_... | 15 MB | 2026-01-15 |
-| ct_siemens_somatom_.. | 22 MB | 2025-11-03 |
+| ct_scanner_siemens_.. | 22 MB | 2025-11-03 |
 | mri_philips_ingenia_. | 18 MB | 2025-08-20 |
 
 Total: 3 files | Tổng: 55 MB

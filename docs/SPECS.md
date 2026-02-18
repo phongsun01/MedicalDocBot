@@ -5,7 +5,7 @@ Dùng làm checklist "chậm nhưng chắc" khi implement từng phase.
 
 ---
 
-## Module 1: Folder Structure & Taxonomy
+## Module 1: Folder Structure & Taxonomy (V2)
 
 | Thuộc tính | Specs |
 |------------|-------|
@@ -42,7 +42,7 @@ files:
 **Test cases**:
 - [ ] Tạo 2 thiết bị mẫu bằng `seed_samples.sh` → verify folder tree đúng hierarchy
 - [ ] Slug golden samples pass: `x_quang_ge_optima_xr220_standard`, `sieu_am_hitachi_arrietta_60_fulloption`
-- [ ] Chạy `setup_taxonomy_folders.sh` 2 lần → không duplicate, không lỗi
+- [ ] Chạy `setup-folders.sh` 2 lần → không duplicate, không lỗi
 
 ---
 

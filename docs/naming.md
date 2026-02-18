@@ -6,8 +6,8 @@
 
 | Loại | Quy tắc | Ví dụ |
 |------|---------|-------|
-| Category | Từ taxonomy YAML | `chan_doan_hinh_anh` |
-| Group | Từ taxonomy YAML | `x_quang` |
+| Category | Từ taxonomy YAML | `chan_doan_hinh_anh`, `xet_nghiem_huyet_hoc` |
+| Group | Từ taxonomy YAML | `x_quang`, `ct_scanner`, `may_dem_tb_mau` |
 | Device | `<group>_<vendor>_<model>_<variant>` | `x_quang_ge_optima_xr220_standard` |
 
 **Golden samples**:

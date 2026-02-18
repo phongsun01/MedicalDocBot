@@ -107,7 +107,7 @@ Chỉnh sửa `config.yaml` để thay đổi paths và settings.
 │   │       ├── contracts/
 │   │       └── ...
 │   └── sieu_am/
-└── xet_nghiem/
+└── xet_nghiem_huyet_hoc/
     └── ...
 ```
 
