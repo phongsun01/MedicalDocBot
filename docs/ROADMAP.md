@@ -10,7 +10,7 @@ Paperless-ngx để sau MVP vì thêm Docker stack + vận hành; khi pipeline �
 **Mục tiêu**: File vào đúng nơi, wiki sinh đúng cấu trúc, bot chạy 24/7, không hỏng.
 Chưa cần OCR, Paperless, hay semantic search.
 
-### 0.1 Chuẩn hóa taxonomy & thư mục (V2) *(0.5–1 ngày)*
+### 0.1 Chuẩn hóa taxonomy & thư mục (V2) *(Hoàn thành)*
 
 - Quy ước slug `snake_case`: `chan_doan_hinh_anh/x_quang/x_quang_ge_optima_xr220_standard/`
 - Subfolders chuẩn mỗi device: `info/` `tech/` `config/` `links/` `price/` `contracts/` `compare/` `other/`
@@ -21,7 +21,7 @@ Chưa cần OCR, Paperless, hay semantic search.
 - `x_quang_ge_optima_xr220_standard`
 - `sieu_am_hitachi_arrietta_60_fulloption`
 
-### 0.2 Wiki template *(0.5–1 ngày)*
+### 0.2 Wiki template *(Hoàn thành)*
 
 - Template `templates/model_template.md.j2` (Jinja2): bảng tóm tắt + sections theo doc_type
 - `wiki/index_categories.md` + `wiki/index_groups.md` tự sinh
@@ -29,7 +29,7 @@ Chưa cần OCR, Paperless, hay semantic search.
 
 **Deliverable D0b**: Mở wiki → click Loại → Nhóm → Thiết bị → thấy trang với sections rỗng sẵn.
 
-### 0.3 openClaw 24/7 + Telegram *(1 ngày)*
+### 0.3 openClaw 24/7 + Telegram *(Phase 2.1 - Current)*
 
 - Cài openClaw: `npm install -g openclaw@latest && openclaw onboard --install-daemon`
 - Bật kênh Telegram, cấu hình `~/.openclaw/openclaw.json`
@@ -59,7 +59,7 @@ Chưa cần OCR, Paperless, hay semantic search.
 
 ---
 
-## Phase 1 — MVP *(Tuần 2)*
+## Phase 1 — MVP *(Hoàn thành Core)*
 
 **Mục tiêu**: Hoàn thành 3 UC P0 — **(UC1) thêm file → classify → wiki update**, **(UC2) tìm kiếm**, **(UC3) gửi file**.
 Chưa cần Paperless.
@@ -101,7 +101,7 @@ Chưa cần Paperless.
 
 ---
 
-## Phase 2 — Nâng cao *(Tuần 3–4)*
+## Phase 2 — Nâng cao *(Tuần 3–4 - In Progress)*
 
 **Mục tiêu**: Thêm Paperless-ngx OCR/index mạnh, rồi semantic/compare/stats/voice.
 

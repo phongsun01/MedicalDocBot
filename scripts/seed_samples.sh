@@ -120,6 +120,44 @@ create_device \
 
 echo ""
 echo "✅ seed_samples.sh hoàn thành"
+
+# 4. Sinh Wiki (Cập nhật: Dùng cấu trúc phân cấp)
+echo "📚 Đang sinh Wiki (Hierarchical structure)..."
+export PYTHONPATH=$PYTHONPATH:.
+python3.11 -c "
+from app.wiki_generator import WikiGenerator
+from app.taxonomy import Taxonomy
+
+try:
+    tax = Taxonomy('data/taxonomy.yaml')
+    gen = WikiGenerator('config.yaml')
+    
+    # 1. Indexes
+    gen.generate_indexes(tax)
+    
+    # 2. Update Samples
+    # GE Optima XR220
+    ge_info = {
+        'vendor': 'GE', 'model': 'Optima XR220',
+        'category_id': 'chan_doan_hinh_anh', 'category_slug': 'chan_doan_hinh_anh/x_quang',
+        'device_slug': 'x_quang_ge_optima_xr220_standard'
+    }
+    gen.update_device_wiki('x_quang_ge_optima_xr220_standard', ge_info, [], taxonomy=tax)
+
+    # Hitachi Arrietta 60
+    hitachi_info = {
+        'vendor': 'Hitachi', 'model': 'Arrietta 60',
+        'category_id': 'chan_doan_hinh_anh', 'category_slug': 'chan_doan_hinh_anh/sieu_am',
+        'device_slug': 'sieu_am_hitachi_arrietta_60_fulloption'
+    }
+    gen.update_device_wiki('sieu_am_hitachi_arrietta_60_fulloption', hitachi_info, [], taxonomy=tax)
+    
+    print('✅ Wiki updated successfully')
+except Exception as e:
+    print(f'❌ Wiki generation failed: {e}')
+    exit(1)
+"
+
 echo ""
 echo "📋 Kiểm tra slug validation:"
 python3 -c "

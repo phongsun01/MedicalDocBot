@@ -13,15 +13,7 @@ import unicodedata
 # Regex chuẩn cho slug hợp lệ
 SLUG_REGEX = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 
-# Bảng chuyển đổi ký tự tiếng Việt → ASCII
-_VIET_MAP = str.maketrans(
-    "àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ"
-    "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ"
-    "đĐ",
-    "aaaaaaaceeeeiiiidnoooooouuuuythyy"
-    "AAAAAAACEEEEIIIIDNOOOOOOUUUUYTHYY"
-    "dD",
-)
+# (Đã di chuyển logic xử lý sang normalize function)
 
 # Ký tự tiếng Việt có dấu phức tạp (cần xử lý riêng)
 _VIET_COMPLEX = {

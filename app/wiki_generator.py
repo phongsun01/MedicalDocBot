@@ -86,11 +86,21 @@ class WikiGenerator:
             autoescape=False,
         )
         self._jinja.filters["format_size"] = _format_size
+        self._jinja.filters["basename"] = lambda p: Path(p).name
         self._jinja.globals["doc_type_labels"] = DOC_TYPE_LABELS
 
-    def _wiki_path(self, device_slug: str) -> Path:
-        """Đường dẫn file wiki cho thiết bị."""
-        return self._wiki_dir / "devices" / f"model_{device_slug}.md"
+    def _clean_name(self, s: str) -> str:
+        """Sanitize filename (giữ lại tiếng Việt, thay ký tự đặc biệt bằng _)."""
+        # Thay thế / bằng _ để tránh lỗi thư mục
+        s = s.replace("/", "_").replace("\\", "_")
+        # Loại bỏ các ký tự không an toàn khác
+        return re.sub(r'[<>:"|?*]', '', s).strip()
+
+    def _wiki_path(self, category: str, group: str, model: str) -> Path:
+        """
+        Đường dẫn file wiki phân cấp: wiki/Category/Group/Model.md
+        """
+        return self._wiki_dir / self._clean_name(category) / self._clean_name(group) / f"{self._clean_name(model)}.md"
 
     def _backup_file(self, path: Path) -> None:
         """Backup file trước khi ghi đè."""
@@ -100,9 +110,6 @@ class WikiGenerator:
     def _replace_auto_section(self, content: str, new_section: str) -> str:
         """
         Thay thế section tự động sinh trong file MD.
-
-        Tìm markers AUTO-GENERATED và thay nội dung giữa chúng.
-        Nếu chưa có markers → append vào cuối.
         """
         pattern = re.compile(
             rf"{re.escape(_AUTO_SECTION_START)}.*?{re.escape(_AUTO_SECTION_END)}",
@@ -120,19 +127,34 @@ class WikiGenerator:
         device_slug: str,
         device_info: dict[str, Any],
         files: list[dict[str, Any]],
+        taxonomy: Any = None,  # Inject Taxonomy để lấy label
     ) -> Path:
         """
-        Tạo hoặc cập nhật wiki MD cho một thiết bị.
-
-        Args:
-            device_slug: Slug thiết bị
-            device_info: Thông tin từ device.yaml
-            files: Danh sách files từ index_store
-
-        Returns:
-            Đường dẫn file wiki đã tạo/cập nhật
+        Tạo hoặc cập nhật wiki MD cho một thiết bị theo cấu trúc phân cấp.
         """
-        wiki_path = self._wiki_path(device_slug)
+        # Lấy thông tin phân cấp
+        category_slug = device_info.get("category_id", "")
+        # device.yaml lưu "cat/group" trong category_slug, cần split
+        full_group_slug = device_info.get("category_slug", "")
+        group_slug = full_group_slug.split("/")[-1] if "/" in full_group_slug else ""
+        
+        vendor = device_info.get("vendor", "")
+        model = device_info.get("model", device_slug)
+        
+        # Default labels nếu không có taxonomy
+        cat_label = category_slug
+        group_label = group_slug
+        
+        if taxonomy:
+            cat_data = taxonomy.get_category(category_slug)
+            if cat_data:
+                cat_label = cat_data["label_vi"]
+                group_data = taxonomy.get_group(category_slug, group_slug)
+                if group_data:
+                    group_label = group_data["label_vi"]
+
+        # Xây dựng path: wiki/Chẩn đoán hình ảnh/X-Quang/GE Optima.md
+        wiki_path = self._wiki_path(cat_label, group_label, f"{vendor} {model}")
         wiki_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Nhóm files theo doc_type
@@ -144,14 +166,14 @@ class WikiGenerator:
         # Đếm theo doc_type
         counts = {dt: len(fs) for dt, fs in file_groups.items()}
 
-        # Tìm file mới nhất theo doc_type
+        # Tìm file mới nhất
         latest: dict[str, str] = {}
         for dt, fs in file_groups.items():
             sorted_files = sorted(fs, key=lambda x: x.get("updated_at", ""), reverse=True)
             if sorted_files:
                 latest[dt] = Path(sorted_files[0]["path"]).name
 
-        # Render auto-section (bảng tóm tắt + danh sách files)
+        # Render auto-section
         try:
             template = self._jinja.get_template("model_template.md.j2")
         except Exception as e:
@@ -169,71 +191,85 @@ class WikiGenerator:
         )
 
         if wiki_path.exists():
-            # Cập nhật section tự động trong file hiện có
             self._backup_file(wiki_path)
             existing = wiki_path.read_text(encoding="utf-8")
             new_content = self._replace_auto_section(existing, auto_section)
         else:
-            # Tạo file mới với header + auto section
-            vendor = device_info.get("vendor", "")
-            model = device_info.get("model", device_slug)
-            header = f"# {model}"
-            if vendor:
-                header += f" — {vendor}"
-            header += f"\n\n> Device slug: `{device_slug}`\n"
+            header = f"# {vendor} {model}"
+            header += f"\n\n> **Phân loại**: {cat_label} > {group_label}\n"
+            header += f"> **Slug**: `{device_slug}`\n"
             new_content = f"{header}\n{_AUTO_SECTION_START}\n{auto_section}\n{_AUTO_SECTION_END}\n"
 
         wiki_path.write_text(new_content, encoding="utf-8")
         logger.info("✅ Wiki cập nhật: %s", wiki_path)
         return wiki_path
 
-    def generate_indexes(self, taxonomy: Any) -> tuple[Path, Path]:
+    def generate_indexes(self, taxonomy: Any) -> list[Path]:
         """
-        Sinh wiki/index_categories.md và wiki/index_groups.md.
-
-        Args:
-            taxonomy: Instance của Taxonomy class
-
+        Sinh Index.md tại gốc và từng folder con để Obsidain hiển thị đẹp.
+        
         Returns:
-            Tuple (categories_path, groups_path)
+            List các file index đã tạo
         """
         self._wiki_dir.mkdir(parents=True, exist_ok=True)
+        created_files = []
 
-        # --- index_categories.md ---
-        cats_path = self._wiki_dir / "index_categories.md"
-        cats_lines = [
-            "# Danh mục thiết bị y tế\n",
-            f"> Cập nhật: {_now_iso()}\n",
-            f"> Tổng số: {taxonomy.category_count} categories\n\n",
-            "| # | Slug | Tên tiếng Việt | Tên tiếng Anh | Số nhóm |\n",
-            "|---|------|----------------|---------------|----------|\n",
-        ]
-        for i, cat in enumerate(taxonomy.list_categories(), 1):
-            groups = cat.get("groups", [])
-            cats_lines.append(
-                f"| {i} | `{cat['slug']}` | {cat['label_vi']} | {cat['label_en']} | {len(groups)} |\n"
-            )
-        cats_path.write_text("".join(cats_lines), encoding="utf-8")
-        logger.info("✅ Index categories: %s", cats_path)
-
-        # --- index_groups.md ---
-        groups_path = self._wiki_dir / "index_groups.md"
-        groups_lines = [
-            "# Danh sách nhóm thiết bị y tế\n",
+        # 1. Root Index (Danh mục chính)
+        root_index = self._wiki_dir / "00_Danh_muc_thiet_bi.md"
+        lines = [
+            "# 🏥 Danh mục thiết bị y tế\n",
             f"> Cập nhật: {_now_iso()}\n\n",
+            "## Các nhóm thiết bị chính\n"
         ]
+        
         for cat in taxonomy.list_categories():
-            groups_lines.append(f"## {cat['label_vi']}\n\n")
-            groups_lines.append(f"> `{cat['slug']}`\n\n")
+            cat_label = cat["label_vi"]
+            safe_cat_label = self._clean_name(cat_label)
+            
+            lines.append(f"- [[{safe_cat_label}/Index|{cat_label}]]\n")
+            
+            # 2. Category Index
+            cat_dir = self._wiki_dir / safe_cat_label
+            cat_dir.mkdir(exist_ok=True)
+            cat_index = cat_dir / "Index.md"
+            
+            cat_lines = [
+                f"# 📂 {cat_label}\n",
+                f"> Slug: `{cat['slug']}`\n\n",
+                "## Các phân nhóm\n"
+            ]
+            
             groups = taxonomy.list_groups(cat["slug"])
-            if groups:
-                groups_lines.append("| Slug | Tên nhóm |\n")
-                groups_lines.append("|------|----------|\n")
-                for g in groups:
-                    groups_lines.append(f"| `{g['slug']}` | {g['label_vi']} |\n")
-            groups_lines.append("\n")
+            for g in groups:
+                group_label = g["label_vi"]
+                safe_group_label = self._clean_name(group_label)
+                
+                cat_lines.append(f"- [[{safe_cat_label}/{safe_group_label}/Index|{group_label}]]\n")
+                
+                # 3. Group Index (Placeholder để Obsidian nhận diện folder)
+                group_dir = cat_dir / safe_group_label
+                group_dir.mkdir(exist_ok=True)
+                group_index = group_dir / "Index.md"
+                
+                group_lines = [
+                    f"# 📑 {group_label}\n",
+                    f"> Thuộc: [[{safe_cat_label}/Index|{cat_label}]]\n",
+                    f"> Slug: `{g['slug']}`\n\n",
+                    "## Danh sách thiết bị\n",
+                    "*(Danh sách sẽ tự động cập nhật khi có thiết bị mới)*\n",
+                    "```dataview\n",
+                    "LIST FROM .\n",
+                    'WHERE file.name != "Index"\n',
+                    "```\n"
+                ]
+                group_index.write_text("".join(group_lines), encoding="utf-8")
+                created_files.append(group_index)
+            
+            cat_index.write_text("".join(cat_lines), encoding="utf-8")
+            created_files.append(cat_index)
 
-        groups_path.write_text("".join(groups_lines), encoding="utf-8")
-        logger.info("✅ Index groups: %s", groups_path)
-
-        return cats_path, groups_path
+        root_index.write_text("".join(lines), encoding="utf-8")
+        created_files.append(root_index)
+        
+        logger.info("✅ Đã tạo %d index files", len(created_files))
+        return created_files

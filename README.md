@@ -8,10 +8,9 @@
 ## Tổng quan
 
 MedicalDocBot là hệ thống DMS (Document Management System) hybrid chạy hoàn toàn local:
-- **Tìm kiếm** tài liệu thiết bị y tế trong < 5 giây
-- **Tự động phân loại** file mới qua Telegram bot
-- **Wiki tự động cập nhật** khi có tài liệu mới
-- **100% local** — không upload dữ liệu y tế ra ngoài
+- **Current Phase**: Phase 2.1 — Setup & Admin (In Progress)
+- **Status**: ✅ Phase 1 Completed | 🔄 Phase 2 Started
+- **Next Milestone**: v2.0-mvp (Telegram Integration & AI Classification)
 
 ## Tech Stack
 
@@ -60,29 +59,33 @@ MedicalDocBot/
 └── pyproject.toml
 ```
 
-## Cài đặt nhanh
+## 🚀 Quick Setup (Phase 2)
 
-```bash
-# 1. Clone repo
-git clone https://github.com/phongsun01/MedicalDocBot.git
-cd MedicalDocBot
+### Prerequisites
+- Node.js 22+
+- Python 3.11+
+- Anthropic API Key
+- Telegram Bot Token
 
-# 2. Tạo virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate
+### Installation
+1. **Install openClaw**:
+   ```bash
+   npm install -g openclaw@latest
+   openclaw doctor
+   ```
+2. **Onboard & Config**:
+   ```bash
+   export ANTHROPIC_API_KEY="sk-..."
+   openclaw onboard --non-interactive ...
+   ```
+3. **Setup Python Environment**:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
 
-# 3. Cài dependencies
-pip install -r requirements.txt
-
-# 4. Tạo cây thư mục ~/MedicalDevices
-bash scripts/setup_taxonomy_folders.sh
-
-# 5. Tạo sample devices để test
-bash scripts/seed_samples.sh
-
-# 6. Chạy watcher
-bash scripts/run_dev.sh
-```
+## 📂 Project Structure
 
 ## Cấu hình
 
