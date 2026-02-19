@@ -10,12 +10,19 @@ from app.slug import build_device_slug
 from app.taxonomy import Taxonomy
 import yaml
 import os
+import shutil
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def clean_name(s: str) -> str:
+    """Sanitize filename (giữ lại tiếng Việt, thay ký tự đặc biệt bằng _)."""
+    s = s.replace("/", "_").replace("\\", "_")
+    return re.sub(r'[<>:"|?*]', '', s).strip()
 
 async def process_new_file(file_path: str):
     config_path = "config.yaml"
@@ -46,6 +53,32 @@ async def process_new_file(file_path: str):
     category_slug = "tim_mach_can_thiep"
     group_slug = "he_thong_can_thiep"
     
+    # 3b. Di chuyển file vào thư mục phân loại
+    # Lấy nhãn tiếng Việt để tạo thư mục (giống Wiki)
+    cat_data = taxonomy.get_category(category_slug)
+    cat_label = cat_data["label_vi"] if cat_data else category_slug
+    
+    group_data = taxonomy.get_group(category_slug, group_slug)
+    group_label = group_data["label_vi"] if group_data else group_slug
+    
+    # Xây dựng đường dẫn đích
+    root = Path(os.path.expandvars(os.path.expanduser(config["paths"]["medical_devices_root"])))
+    target_dir = root / clean_name(cat_label) / clean_name(group_label)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    
+    new_path = target_dir / Path(file_path).name
+    
+    # Chỉ di chuyển nếu file chưa ở đúng chỗ
+    if Path(file_path).resolve() != new_path.resolve():
+        try:
+            shutil.move(file_path, new_path)
+            logger.info(f"Đã di chuyển file đến: {new_path}")
+            file_path = str(new_path) # Cập nhật file_path để lưu vào DB
+        except Exception as e:
+            logger.error(f"Lỗi khi di chuyển file: {e}")
+    else:
+        logger.info("File đã ở đúng thư mục phân loại.")
+            
     # 4. Lưu vào Database
     sha256 = "dummy_sha256" # Sẽ dùng compute_sha256 trong prod
     from app.index_store import compute_sha256

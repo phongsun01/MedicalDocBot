@@ -25,6 +25,9 @@ import yaml
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+# Import logic xử lý từ process_event.py
+from app.process_event import process_new_file
+
 logger = logging.getLogger(__name__)
 
 
@@ -224,7 +227,11 @@ class MedicalWatcher:
                 Path(event["path"]).name,
                 event.get("size_bytes", 0),
             )
-            # TODO Phase 2: gọi classifier.py + telegram_bot.py
+            
+            # Gọi logic xử lý Phase 1.0 (Classify -> Move -> DB -> Wiki -> Notify)
+            if event["event"] in ("created", "moved"):
+                await process_new_file(event["path"])
+                
         except Exception as e:
             # Không crash daemon
             logger.error("Lỗi xử lý event %s: %s", event.get("path"), e)
