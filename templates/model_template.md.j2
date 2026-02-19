@@ -3,11 +3,11 @@
 
 | Loại tài liệu | Số file | File mới nhất |
 |---------------|---------|---------------|
-{% for doc_type, label in doc_type_labels.items() %}
-{% set count = counts.get(doc_type, 0) %}
-{% set last = latest.get(doc_type, '—') %}
+{%- for doc_type, label in doc_type_labels.items() %}
+{%- set count = counts.get(doc_type, 0) %}
+{%- set last = latest.get(doc_type, '—') %}
 | {{ label }} | {{ count }} | {{ last }} |
-{% endfor %}
+{%- endfor %}
 
 > Cập nhật: `{{ updated_at }}`
 

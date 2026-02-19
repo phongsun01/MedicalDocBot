@@ -7,6 +7,7 @@ from app.classifier import MedicalClassifier
 from app.index_store import IndexStore
 from app.wiki_generator import WikiGenerator
 from app.slug import build_device_slug
+from app.taxonomy import Taxonomy
 import yaml
 import os
 from dotenv import load_dotenv
@@ -25,6 +26,7 @@ async def process_new_file(file_path: str):
     classifier = MedicalClassifier(config_path)
     store = IndexStore(config["paths"]["db_file"])
     wiki = WikiGenerator(config_path)
+    taxonomy = Taxonomy(config["paths"]["taxonomy_file"])
     
     await store.init()
     
@@ -40,8 +42,8 @@ async def process_new_file(file_path: str):
     
     # 3. Tạo slugs
     device_slug = build_device_slug(vendor, model)
-    # Lấy category từ taxonomy dựa trên classification (tạm dùng doc_type hoặc category hint)
-    category_slug = "tim_mach_can_thiep" # Giả định cho Azurion
+    # Lấy category từ taxonomy dựa trên classification (Azurion -> Tim mạch can thiệp)
+    category_slug = "tim_mach_can_thiep"
     group_slug = "he_thong_can_thiep"
     
     # 4. Lưu vào Database
@@ -73,7 +75,7 @@ async def process_new_file(file_path: str):
     
     # Lấy tất cả file của device này để render wiki
     all_files = await store.search(device_slug=device_slug)
-    wiki_path = wiki.update_device_wiki(device_slug, device_info, all_files)
+    wiki_path = wiki.update_device_wiki(device_slug, device_info, all_files, taxonomy=taxonomy)
     logger.info(f"Wiki đã được cập nhật: {wiki_path}")
     
     # 6. Gửi báo cáo Telegram qua OpenClaw
