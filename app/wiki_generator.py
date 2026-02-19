@@ -226,15 +226,15 @@ class WikiGenerator:
             cat_label = cat["label_vi"]
             safe_cat_label = self._clean_name(cat_label)
             
-            lines.append(f"- [[{safe_cat_label}/00_Trang_tong_hop|{cat_label}]]\n")
+            lines.append(f"- [[{safe_cat_label}/Index|{cat_label}]]\n")
             
             # 2. Category Index
             cat_dir = self._wiki_dir / safe_cat_label
             cat_dir.mkdir(exist_ok=True)
-            cat_index = cat_dir / "00_Trang_tong_hop.md"
+            cat_index = cat_dir / "Index.md"
             
             cat_lines = [
-                f"# 📂 {cat_label} (Trang tổng hợp)\n",
+                f"# 📂 {cat_label}\n",
                 f"> Slug: `{cat['slug']}`\n\n",
                 "## Các phân nhóm\n"
             ]
@@ -244,24 +244,31 @@ class WikiGenerator:
                 group_label = g["label_vi"]
                 safe_group_label = self._clean_name(group_label)
                 
-                cat_lines.append(f"- [[{safe_cat_label}/{safe_group_label}/00_Trang_tong_hop|{group_label}]]\n")
+                cat_lines.append(f"- [[{safe_cat_label}/{safe_group_label}/Index|{group_label}]]\n")
                 
                 # 3. Group Index
                 group_dir = cat_dir / safe_group_label
                 group_dir.mkdir(exist_ok=True)
-                group_index = group_dir / "00_Trang_tong_hop.md"
+                group_index = group_dir / "Index.md"
                 
+                # Scan files for static list
+                device_files = []
+                if group_dir.exists():
+                    device_files = sorted([f.name for f in group_dir.glob("*.md") if f.name != "Index.md"])
+
                 group_lines = [
-                    f"# 📑 {group_label} (Trang tổng hợp)\n",
-                    f"> Thuộc: [[{safe_cat_label}/00_Trang_tong_hop|{cat_label}]]\n",
+                    f"# 📑 {group_label}\n",
+                    f"> Thuộc: [[{safe_cat_label}/Index|{cat_label}]]\n",
                     f"> Slug: `{g['slug']}`\n\n",
-                    "## Danh sách thiết bị\n",
-                    "*(Danh sách sẽ tự động cập nhật khi có thiết bị mới)*\n",
-                    "```dataview\n",
-                    "LIST FROM .\n",
-                    'WHERE file.name != "00_Trang_tong_hop"\n',
-                    "```\n"
+                    "## Danh sách thiết bị\n"
                 ]
+                
+                if device_files:
+                    for df in device_files:
+                        group_lines.append(f"- [[{df}|{df.replace('.md', '').replace('_', ' ')}]]\n")
+                else:
+                    group_lines.append("*(Chưa có thiết bị nào)*\n")
+                    
                 group_index.write_text("".join(group_lines), encoding="utf-8")
                 created_files.append(group_index)
             
