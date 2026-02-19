@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS files (
     device_slug  TEXT,
     category_slug TEXT,
     group_slug   TEXT,
+    vendor       TEXT,
+    model        TEXT,
+    summary      TEXT,
     size_bytes   INTEGER NOT NULL DEFAULT 0,
     confirmed    INTEGER NOT NULL DEFAULT 0,  -- 0: chờ confirm, 1: đã confirm
     created_at   TEXT    NOT NULL,
@@ -95,9 +98,28 @@ class IndexStore:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def init(self) -> None:
-        """Tạo schema nếu chưa có."""
+        """Tạo schema nếu chưa có và migrate nếu cần."""
         async with aiosqlite.connect(self._db_path) as db:
             await db.executescript(_SCHEMA_SQL)
+            
+            # Migration: Kiểm tra và thêm cột mới nếu thiếu (cho DB cũ)
+            async with db.execute("PRAGMA table_info(files)") as cursor:
+                columns = [row[1] for row in await cursor.fetchall()]
+            
+            if "vendor" not in columns:
+                logger.info("⚡️ Migrating DB: Adding column 'vendor'")
+                await db.execute("ALTER TABLE files ADD COLUMN vendor TEXT")
+            if "model" not in columns:
+                logger.info("⚡️ Migrating DB: Adding column 'model'")
+                await db.execute("ALTER TABLE files ADD COLUMN model TEXT")
+            if "summary" not in columns:
+                logger.info("⚡️ Migrating DB: Adding column 'summary'")
+                await db.execute("ALTER TABLE files ADD COLUMN summary TEXT")
+                
+            # Tạo index cho cột mới sau khi chắc chắn cột đã tồn tại
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_vendor ON files(vendor)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_model ON files(model)")
+            
             await db.commit()
         logger.info("IndexStore khởi tạo: %s", self._db_path)
 
@@ -109,6 +131,9 @@ class IndexStore:
         device_slug: str | None = None,
         category_slug: str | None = None,
         group_slug: str | None = None,
+        vendor: str | None = None,
+        model: str | None = None,
+        summary: str | None = None,
         size_bytes: int | None = None,
         confirmed: bool = False,
     ) -> int:
@@ -152,12 +177,14 @@ class IndexStore:
                     UPDATE files SET
                         sha256 = ?, doc_type = ?, device_slug = ?,
                         category_slug = ?, group_slug = ?,
+                        vendor = ?, model = ?, summary = ?,
                         size_bytes = ?, confirmed = ?, updated_at = ?, indexed_at = ?
                     WHERE path = ?
                     """,
                     (
                         sha256, doc_type, device_slug,
                         category_slug, group_slug,
+                        vendor, model, summary,
                         size_bytes, int(confirmed), now, now,
                         path_str,
                     ),
@@ -170,12 +197,14 @@ class IndexStore:
                     """
                     INSERT INTO files
                         (path, sha256, doc_type, device_slug, category_slug, group_slug,
+                         vendor, model, summary,
                          size_bytes, confirmed, created_at, updated_at, indexed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         path_str, sha256, doc_type, device_slug,
                         category_slug, group_slug,
+                        vendor, model, summary,
                         size_bytes, int(confirmed), now, now, now,
                     ),
                 )
@@ -254,8 +283,10 @@ class IndexStore:
             conditions.append("category_slug = ?")
             params.append(category_slug)
         if keyword:
-            conditions.append("path LIKE ?")
-            params.append(f"%{keyword}%")
+            # Tìm kiếm thông minh: path OR vendor OR model OR summary
+            kw = f"%{keyword}%"
+            conditions.append("(path LIKE ? OR vendor LIKE ? OR model LIKE ? OR summary LIKE ?)")
+            params.extend([kw, kw, kw, kw])
         if confirmed_only:
             conditions.append("confirmed = 1")
 

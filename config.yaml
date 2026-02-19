@@ -95,7 +95,10 @@ services:
 
   telegram:
     # Token lấy từ biến môi trường TELEGRAM_BOT_TOKEN
-    # Admin chat ID lấy từ TELEGRAM_ADMIN_CHAT_ID
+    # ID nhóm chat để gửi báo cáo (File mới)
+    group_chat_id: "-100xxxxxxxx" 
+    # ID admin để báo lỗi (Optional)
+    admin_chat_id: "123456789"
     # Số kết quả tối đa trả về khi search
     max_search_results: 5
 

@@ -13,6 +13,8 @@ import os
 import shutil
 import re
 from dotenv import load_dotenv
+from telegram import Bot
+from telegram.constants import ParseMode
 
 load_dotenv()
 
@@ -106,17 +108,26 @@ async def process_new_file(file_path: str):
         sha256 = compute_sha256(file_path)
     except:
         pass
+    # Lấy kích thước file mới từ path đã di chuyển
+    try:
+        size_bytes = os.path.getsize(file_path)
+    except OSError:
+        size_bytes = 0
 
-    file_id = await store.upsert_file(
+    await store.upsert_file(
         path=file_path,
         sha256=sha256,
         doc_type=doc_type,
         device_slug=device_slug,
         category_slug=category_slug,
         group_slug=group_slug,
+        vendor=vendor,
+        model=model,
+        summary=summary,
+        size_bytes=size_bytes,
         confirmed=True
     )
-    logger.info(f"Đã lưu vào DB với ID: {file_id}")
+    logger.info(f"Đã lưu vào DB với ID: {file_path}")
     
     # 5. Cập nhật Wiki
     device_info = {
@@ -143,11 +154,21 @@ async def process_new_file(file_path: str):
              f"{location_msg}\n\n" \
              f"✅ Đã cập nhật Wiki & Database."
     
-    # Gọi OpenClaw CLI để gửi tin nhắn
+    # Gửi tin nhắn qua Telegram Bot API (Direct)
     token = os.getenv("TELEGRAM_BOT_TOKEN")
-    target = "7504023077" # User ID đã pairing
-    cmd = f"/opt/homebrew/opt/node@22/bin/node /opt/homebrew/lib/node_modules/openclaw/dist/index.js message send --channel telegram --target {target} --message '{report}'"
-    os.system(cmd)
+    group_chat_id = config["services"]["telegram"].get("group_chat_id")
+    
+    if token and group_chat_id:
+        try:
+            bot = Bot(token=token)
+            # escape special markdown chars if needed, but for now trust report format or use MarkdownV2
+            # Report đang dùng markdown legacy (**bold**, `code`), phù hợp với ParseMode.MARKDOWN
+            await bot.send_message(chat_id=group_chat_id, text=report, parse_mode=ParseMode.MARKDOWN)
+            logger.info(f"Đã gửi báo cáo Telegram tới: {group_chat_id}")
+        except Exception as e:
+            logger.error(f"Lỗi gửi Telegram: {e}")
+    else:
+        logger.warning("Không tìm thấy TELEGRAM_BOT_TOKEN hoặc group_chat_id, bỏ qua gửi tin.")
     
     logger.info("--- Xử lý hoàn tất ---")
 
