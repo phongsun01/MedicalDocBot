@@ -99,6 +99,14 @@ services:
     # Số kết quả tối đa trả về khi search
     max_search_results: 5
 
+  gemini:
+    enabled: true
+    # Model sử dụng cho phân loại và trích xuất
+    model: "gemini-1.5-flash"
+    # Model sử dụng cho embedding (tìm kiếm)
+    embedding_model: "text-embedding-004"
+    # API key sẽ được đọc từ biến môi trường GEMINI_API_KEY
+
 logging:
   # Level: DEBUG, INFO, WARNING, ERROR
   level: "INFO"
