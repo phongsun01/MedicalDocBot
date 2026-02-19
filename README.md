@@ -9,8 +9,8 @@
 
 MedicalDocBot là hệ thống DMS (Document Management System) hybrid chạy hoàn toàn local:
 - **Current Phase**: Phase 2.1 — Setup & Admin (In Progress)
-- **Status**: ✅ Phase 1 Completed | 🔄 Phase 2 Started
-- **Next Milestone**: v2.0-mvp (Telegram Integration & AI Classification)
+- **Status**: ✅ Phase 1.0 MVP Completed | 🔄 Phase 2 Started
+- **Next Milestone**: v2.0 (Paperless OCR & Advanced Search)
 
 ## Tech Stack
 
@@ -97,7 +97,15 @@ cp .env.example .env
 
 Chỉnh sửa `config.yaml` để thay đổi paths và settings.
 
-## Hierarchy tài liệu
+## Hướng dẫn sử dụng (Phase 1.0)
+
+1. **Thả file**: Copy file PDF/Word vào thư mục `~/MedicalDevices`.
+2. **Tự động xử lý**:
+   - Hệ thống phát hiện file mới.
+   - Gửi nội dung cho Gemini phân loại (Extract Vendor, Model, Doc Type).
+   - Di chuyển file vào thư mục con tương ứng (VD: `Tim mạch/Cathlab`).
+   - Cập nhật Wiki (trang `Index.md` và trang thiết bị).
+3. **Nhận thông báo**: Bot Telegram gửi tin nhắn báo cáo kết quả (kèm đường dẫn file).
 
 ```
 ~/MedicalDevices/
@@ -114,14 +122,14 @@ Chỉnh sửa `config.yaml` để thay đổi paths và settings.
     └── ...
 ```
 
-## Phase 1 — Core (hiện tại)
+## Phase 1 — Core & MVP (Hoàn thành)
 
-- [x] Taxonomy 25 categories
-- [x] Slug validation + normalization
-- [x] SQLite index store
-- [x] File watcher + debounce
-- [x] Wiki generator (Jinja2)
-- [x] Setup scripts
+- [x] Taxonomy 25 categories (V2)
+- [x] SQLite index store & File watcher
+- [x] **Auto-classify** (Gemini AI 1.5 Flash)
+- [x] **Auto-move** (Tự động di chuyển file vào thư mục phân loại)
+- [x] **Auto-Wiki** (Sinh trang tĩnh Index.md, không cần plugin)
+- [x] **Telegram Reporting** (Báo cáo tiếng Việt, kèm đường dẫn)
 
 ## Phase 2 — MVP (tiếp theo)
 

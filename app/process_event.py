@@ -19,6 +19,18 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+DOC_TYPE_MAP = {
+    "ky_thuat": "Kỹ thuật",
+    "cau_hinh": "Cấu hình",
+    "bao_gia": "Báo giá",
+    "trung_thau": "Trúng thầu",
+    "hop_dong": "Hợp đồng",
+    "so_sanh": "So sánh",
+    "thong_tin": "Thông tin",
+    "lien_ket": "Liên kết",
+    "khac": "Khác"
+}
+
 def clean_name(s: str) -> str:
     """Sanitize filename (giữ lại tiếng Việt, thay ký tự đặc biệt bằng _)."""
     s = s.replace("/", "_").replace("\\", "_")
@@ -47,6 +59,9 @@ async def process_new_file(file_path: str):
     model = classification.get("model", "Unknown")
     summary = classification.get("summary", "")
     
+    # Mapping doc_type sang tiếng Việt
+    doc_type_vi = DOC_TYPE_MAP.get(doc_type, doc_type)
+    
     # 3. Tạo slugs
     device_slug = build_device_slug(vendor, model)
     # Lấy category từ taxonomy dựa trên classification (Azurion -> Tim mạch can thiệp)
@@ -63,17 +78,22 @@ async def process_new_file(file_path: str):
     
     # Xây dựng đường dẫn đích
     root = Path(os.path.expandvars(os.path.expanduser(config["paths"]["medical_devices_root"])))
-    target_dir = root / clean_name(cat_label) / clean_name(group_label)
+    target_relative = Path(clean_name(cat_label)) / clean_name(group_label)
+    target_dir = root / target_relative
     target_dir.mkdir(parents=True, exist_ok=True)
     
     new_path = target_dir / Path(file_path).name
     
     # Chỉ di chuyển nếu file chưa ở đúng chỗ
+    moved = False
     if Path(file_path).resolve() != new_path.resolve():
         try:
             shutil.move(file_path, new_path)
             logger.info(f"Đã di chuyển file đến: {new_path}")
+            # Xóa entry cũ trong DB nếu tồn tại (để tránh double)
+            await store.delete_file(str(file_path)) 
             file_path = str(new_path) # Cập nhật file_path để lưu vào DB
+            moved = True
         except Exception as e:
             logger.error(f"Lỗi khi di chuyển file: {e}")
     else:
@@ -112,12 +132,15 @@ async def process_new_file(file_path: str):
     logger.info(f"Wiki đã được cập nhật: {wiki_path}")
     
     # 6. Gửi báo cáo Telegram qua OpenClaw
+    location_msg = f"\n📁 **Đã lưu vào:** `{target_relative}`" if moved else ""
+    
     report = f"📄 **Phát hiện tài liệu mới!**\n\n" \
              f"**File:** `{Path(file_path).name}`\n" \
              f"**Hãng:** {vendor}\n" \
              f"**Model:** {model}\n" \
-             f"**Loại:** {doc_type}\n" \
-             f"**Tóm tắt:** {summary}\n\n" \
+             f"**Loại:** {doc_type_vi}\n" \
+             f"**Tóm tắt:** {summary}\n" \
+             f"{location_msg}\n\n" \
              f"✅ Đã cập nhật Wiki & Database."
     
     # Gọi OpenClaw CLI để gửi tin nhắn

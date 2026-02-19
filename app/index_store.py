@@ -185,6 +185,18 @@ class IndexStore:
             await db.commit()
 
         return record_id
+    
+    async def delete_file(self, path: str | Path) -> None:
+        """
+        Xóa file khỏi index.
+        
+        Args:
+            path: Đường dẫn file cần xóa
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute("DELETE FROM files WHERE path = ?", (str(path),))
+            await db.commit()
+            logger.info("Đã xóa file khỏi DB: %s", path)
 
     async def get_file(self, path: str | Path) -> dict[str, Any] | None:
         """
