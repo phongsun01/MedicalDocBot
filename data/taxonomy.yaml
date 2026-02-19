@@ -30,21 +30,21 @@ categories:
     label_en: "Hematology analyzers"
     sub:
       may_dem_tb_mau: "Máy đếm tế bào máu tự động"
-      may_dong_mau: "Máy xét nghiệm đông máu – cầm máu"
+      may_dong_mau: "Máy xét nghiệm đông máu - cầm máu"
       may_phan_tich_huyet_hoc: "Máy phân tích huyết học chuyên sâu"
 
-  # 4. Xét nghiệm sinh hóa – miễn dịch
+  # 4. Xét nghiệm sinh hóa - miễn dịch
   xet_nghiem_sinh_hoa:
-    label_vi: "Xét nghiệm sinh hóa – miễn dịch"
+    label_vi: "Xét nghiệm sinh hóa - miễn dịch"
     label_en: "Clinical chemistry & immunology analyzers"
     sub:
       may_sinh_hoa: "Máy xét nghiệm sinh hóa tự động"
       may_mien_dich: "Máy xét nghiệm miễn dịch (ELISA, CLIA)"
       may_dien_giai: "Máy điện giải đồ"
 
-  # 5. Xét nghiệm vi sinh – sinh học phân tử
+  # 5. Xét nghiệm vi sinh - sinh học phân tử
   xet_nghiem_vi_sinh:
-    label_vi: "Xét nghiệm vi sinh – sinh học phân tử"
+    label_vi: "Xét nghiệm vi sinh - sinh học phân tử"
     label_en: "Microbiology & molecular diagnostics"
     sub:
       he_thong_pcr: "Hệ thống PCR, RT-PCR"
@@ -52,9 +52,9 @@ categories:
       tu_an_toan_sinh_hoc: "Tủ an toàn sinh học"
       tu_u_co2: "Tủ ủ CO₂"
 
-  # 6. Xét nghiệm giải phẫu bệnh – tế bào học
+  # 6. Xét nghiệm giải phẫu bệnh - tế bào học
   xet_nghiem_giai_phau_benh:
-    label_vi: "Xét nghiệm giải phẫu bệnh – tế bào học"
+    label_vi: "Xét nghiệm giải phẫu bệnh - tế bào học"
     label_en: "Anatomical pathology & cytology"
     sub:
       may_xu_ly_mo: "Máy xử lý mô tự động"
@@ -72,9 +72,9 @@ categories:
       may_tho_van_chuyen: "Máy thở vận chuyển"
       may_theo_doi_khi_me: "Máy theo dõi khí mê, khí thở"
 
-  # 8. Hồi sức cấp cứu – theo dõi bệnh nhân
+  # 8. Hồi sức cấp cứu - theo dõi bệnh nhân
   hoi_suc_cap_cuu:
-    label_vi: "Hồi sức cấp cứu – theo dõi bệnh nhân"
+    label_vi: "Hồi sức cấp cứu - theo dõi bệnh nhân"
     label_en: "ICU & emergency equipment"
     sub:
       monitor: "Monitor theo dõi bệnh nhân"
@@ -83,9 +83,9 @@ categories:
       oxy_lieu_phap: "Thiết bị oxy liệu pháp"
       may_hut_dich: "Máy hút dịch y tế"
 
-  # 9. Tim mạch – can thiệp
+  # 9. Tim mạch - can thiệp
   tim_mach_can_thiep:
-    label_vi: "Tim mạch – Can thiệp"
+    label_vi: "Tim mạch - Can thiệp"
     label_en: "Cardiology & interventional systems"
     sub:
       may_dien_tam_do: "Máy điện tâm đồ"
@@ -94,9 +94,9 @@ categories:
       may_tao_nhip: "Máy tạo nhịp tim ngoài"
       dien_sinh_ly: "Thiết bị điện sinh lý tim"
 
-  # 10. Phẫu thuật – phòng mổ
-  phau_thuat_phong_mo:
-    label_vi: "Phẫu thuật – phòng mổ"
+  # 10. Phẫu thuật - phòng mổ
+  thiet_bi_phong_mo:
+    label_vi: "Phẫu thuật - phòng mổ"
     label_en: "Surgery & OR equipment"
     sub:
       ban_mo: "Bàn mổ đa năng"
@@ -106,9 +106,9 @@ categories:
       he_thong_treo_tran: "Hệ thống treo trần phòng mổ"
       tourniquet: "Tourniquet (băng cầm máu khí nén)"
 
-  # 11. Sản – Nhi
+  # 11. Sản - Nhi
   san_nhi:
-    label_vi: "Sản – Nhi"
+    label_vi: "Sản - Nhi"
     label_en: "Obstetric & pediatric equipment"
     sub:
       may_sieu_am_san: "Máy siêu âm sản khoa"
@@ -148,9 +148,9 @@ categories:
       den_tram: "Đèn trám (composite curing light)"
       thiet_bi_labo_rang: "Thiết bị labo răng"
 
-  # 15. Phục hồi chức năng – vật lý trị liệu
+  # 15. Phục hồi chức năng - vật lý trị liệu
   phuc_hoi_chuc_nang:
-    label_vi: "Phục hồi chức năng – vật lý trị liệu"
+    label_vi: "Phục hồi chức năng - vật lý trị liệu"
     label_en: "Rehabilitation & physical therapy"
     sub:
       may_keo_gian: "Máy kéo giãn cột sống, khớp"
@@ -159,9 +159,9 @@ categories:
       dien_xung: "Máy điện xung (TENS, EMS)"
       thiet_bi_tap_van_dong: "Thiết bị tập vận động"
 
-  # 16. Lọc máu – thận nhân tạo
+  # 16. Lọc máu - thận nhân tạo
   loc_mau_than_nhan_tao:
-    label_vi: "Lọc máu – thận nhân tạo"
+    label_vi: "Lọc máu - thận nhân tạo"
     label_en: "Dialysis equipment"
     sub:
       may_than_nhan_tao: "Máy thận nhân tạo"
@@ -169,9 +169,9 @@ categories:
       he_thong_ro: "Hệ thống RO xử lý nước thận nhân tạo"
       may_loc_hap_phu: "Máy lọc hấp phụ"
 
-  # 17. Phẫu thuật nội soi – phẫu thuật ít xâm lấn
+  # 17. Phẫu thuật nội soi - phẫu thuật ít xâm lấn
   phau_thuat_noi_soi:
-    label_vi: "Phẫu thuật nội soi – phẫu thuật ít xâm lấn"
+    label_vi: "Phẫu thuật nội soi - phẫu thuật ít xâm lấn"
     label_en: "Minimally invasive surgery"
     sub:
       tower_noi_soi: "Tower nội soi phẫu thuật"
@@ -179,9 +179,9 @@ categories:
       dao_dien_luong_cuc: "Dao điện lưỡng cực"
       camera_4k_3d: "Camera 4K/3D nội soi"
 
-  # 18. Ung bướu – xạ trị
+  # 18. Ung bướu - xạ trị
   ung_buou_xa_tri:
-    label_vi: "Ung bướu – xạ trị"
+    label_vi: "Ung bướu - xạ trị"
     label_en: "Oncology & radiotherapy"
     sub:
       may_xa_tri_ngoai: "Máy xạ trị ngoài (Linac)"
@@ -189,9 +189,9 @@ categories:
       he_thong_lap_ke_hoach: "Hệ thống lập kế hoạch xạ trị"
       may_xa_ap_sat: "Máy xạ áp sát"
 
-  # 19. Kiểm soát nhiễm khuẩn – tiệt khuẩn
+  # 19. Kiểm soát nhiễm khuẩn - tiệt khuẩn
   kiem_soat_nhiem_khuan:
-    label_vi: "Kiểm soát nhiễm khuẩn – tiệt khuẩn"
+    label_vi: "Kiểm soát nhiễm khuẩn - tiệt khuẩn"
     label_en: "Sterilization & infection control"
     sub:
       noi_hap: "Nồi hấp (autoclave)"
@@ -209,9 +209,9 @@ categories:
       may_duong_huyet: "Máy đo đường huyết"
       khi_mau_cam_tay: "Máy khí máu cầm tay"
       may_xn_tieu_tien: "Máy xét nghiệm tiểu tiện cầm tay"
-  # 21. CNTT y tế – PACS, HIS, LIS, RIS
+  # 21. CNTT y tế - PACS, HIS, LIS, RIS
   cntt_y_te:
-    label_vi: "CNTT y tế – PACS, HIS, LIS, RIS"
+    label_vi: "CNTT y tế - PACS, HIS, LIS, RIS"
     label_en: "Health IT & software"
     sub:
       ris_pacs: "Hệ thống RIS/PACS lưu trữ hình ảnh"
@@ -230,9 +230,9 @@ categories:
       thiet_bi_theo_doi_suc_khoe: "Thiết bị theo dõi sức khỏe cá nhân"
       thiet_bi_tram_y_te_xa: "Thiết bị y tế tại trạm y tế xã"
 
-  # 23. Trang thiết bị y tế implant – cấy ghép, thay thế
+  # 23. Trang thiết bị y tế implant - cấy ghép, thay thế
   implant_cay_ghep:
-    label_vi: "Trang thiết bị y tế implant – cấy ghép, thay thế"
+    label_vi: "Trang thiết bị y tế implant - cấy ghép, thay thế"
     label_en: "Implants & prosthetics"
     sub:
       khop_nhan_tao: "Khớp nhân tạo (háng, gối, vai...)"

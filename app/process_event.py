@@ -66,9 +66,16 @@ async def process_new_file(file_path: str):
     
     # 3. Tạo slugs
     device_slug = build_device_slug(vendor, model)
-    # Lấy category từ taxonomy dựa trên classification (Azurion -> Tim mạch can thiệp)
-    category_slug = "tim_mach_can_thiep"
-    group_slug = "he_thong_can_thiep"
+    # Parse category/group từ classification result
+    full_category_slug = classification.get("category_slug", "")
+    if "/" in full_category_slug:
+        parts = full_category_slug.split("/")
+        category_slug = clean_name(parts[0])
+        group_slug = clean_name(parts[1])
+    else:
+        # Fallback nếu AI không trả về đúng format
+        category_slug = clean_name(full_category_slug) if full_category_slug else "chua_phan_loai"
+        group_slug = "khac"
     
     # 3b. Di chuyển file vào thư mục phân loại
     # Lấy nhãn tiếng Việt để tạo thư mục (giống Wiki)

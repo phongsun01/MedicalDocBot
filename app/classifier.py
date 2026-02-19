@@ -61,8 +61,14 @@ class MedicalClassifier:
             "vendor": "...",
             "model": "...",
             "device_slug": "...",
+            "category_slug": "...", 
             "summary": "..."
         }}
+        
+        Lưu ý quan trọng:
+        - "category_slug" PHẢI khớp với cấu trúc thư mục hiện có nếu có thể (VD: chan_doan_hinh_anh/x_quang, tim_mach/can_thiep, ...).
+        - Nếu không chắc chắn, hãy để trống hoặc suy luận logic nhất từ tên thiết bị.
+        - Đừng quy chụp mọi thứ vào 'tim_mach' trừ khi nó thực sự liên quan đến mạch vành, stent, DSA.
         """
 
         try:

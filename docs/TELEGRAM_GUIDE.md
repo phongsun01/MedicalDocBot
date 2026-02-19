@@ -24,12 +24,13 @@ Tài liệu này hướng dẫn cách tùy biến Bot `@MedDocVn_Bot` và tích 
     -   Vào cài đặt nhóm > Add Members.
     -   Tìm `@MedDocVn_Bot` và thêm vào.
 3.  **Lấy Chat ID của nhóm**:
-    -   Thêm bot **@RawDataBot** vào nhóm đó.
+    -   Thêm bot **@RawDataBot** (hoặc `@GetIDsBot`) vào nhóm đó.
     -   Nó sẽ hiện ra một đoạn JSON. Tìm dòng `"chat": { "id": -100xxxxxxxx, ... }`.
     -   Copy số ID đó (bao gồm cả dấu âm `-`).
-    -   Sau khi lấy được ID, bạn có thể kick @RawDataBot ra khỏi nhóm.
+    -   Sau khi lấy được ID, bạn có thể mời @RawDataBot ra khỏi nhóm.
 4.  **Cập nhật cấu hình**:
-    -   Mở file `app/process_event.py`.
-    -   Tìm dòng `target = "..."`.
-    -   Thay ID cá nhân bằng ID nhóm vừa lấy.
+    -   Mở file `config.yaml`.
+    -   Tìm đoạn `services -> telegram -> group_chat_id`.
+    -   Thay số ID cũ bằng ID nhóm vừa lấy (để trong dấu ngoặc kép, VD: `"-10012345678"`).
     -   Khởi động lại Watcher.
+    -   Đảm bảo file `.env` đã có `TELEGRAM_BOT_TOKEN`.

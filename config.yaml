@@ -88,7 +88,7 @@ services:
     max_retries: 3
 
   paperless:
-    enabled: false  # Bật ở Phase 2
+    enabled: true  # Bật ở Phase 2
     base_url: "http://localhost:8000"
     timeout_seconds: 60
     max_retries: 3
@@ -96,9 +96,10 @@ services:
   telegram:
     # Token lấy từ biến môi trường TELEGRAM_BOT_TOKEN
     # ID nhóm chat để gửi báo cáo (File mới)
-    group_chat_id: "-100xxxxxxxx" 
+    # Tạm thời để ID cá nhân nếu chưa có Group ID, hoặc user cần update thủ công
+    group_chat_id: "-5115204015" 
     # ID admin để báo lỗi (Optional)
-    admin_chat_id: "123456789"
+    admin_chat_id: "7504023077"
     # Số kết quả tối đa trả về khi search
     max_search_results: 5
 

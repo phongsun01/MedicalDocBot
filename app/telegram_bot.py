@@ -122,6 +122,31 @@ async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Lỗi lệnh /find: {e}")
         await update.message.reply_text("❌ Có lỗi xảy ra khi tìm kiếm.")
 
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Báo cáo trạng thái hệ thống."""
+    # Đếm số file trong DB
+    try:
+        count = await store.count_files()
+        msg = (
+            f"🟢 **Hệ thống đang hoạt động**\n"
+            f"- 🗂 Tổng số file: `{count}`\n"
+            f"- 📡 Bot: Online\n"
+            f"- 🧠 AI Model: `{config['services']['gemini']['model']}`"
+        )
+    except Exception as e:
+        msg = f"🔴 Lỗi kết nối Database: {e}"
+        
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xử lý tin nhắn văn bản (tự động tìm kiếm)."""
+    text = update.message.text
+    if not text.startswith('/'):
+        # Coi như là lệnh find
+        # Need to pass the text as context.args for the find function
+        context.args = text.split()
+        await find(update, context)
+
 async def main():
     global config, store
     
@@ -131,7 +156,7 @@ async def main():
     config = load_config()
     
     # Init DB
-    store = IndexStore(config["paths"]["db_file"])
+    store = IndexStore(config["paths"]["database"]) # Changed from db_file to database
     await store.init()
     
     # Init Bot
@@ -147,6 +172,11 @@ async def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("latest", latest))
     app.add_handler(CommandHandler("find", find))
+    app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("healthcheck", status_command)) # Alias
+    
+    # Message Handler (Non-command)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("🚀 MedicalDocBot Telegram đang chạy...")
     

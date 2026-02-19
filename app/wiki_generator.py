@@ -202,6 +202,11 @@ class WikiGenerator:
 
         wiki_path.write_text(new_content, encoding="utf-8")
         logger.info("✅ Wiki cập nhật: %s", wiki_path)
+        
+        # Auto-update indexes nếu có taxonomy
+        if taxonomy:
+            self.generate_indexes(taxonomy)
+            
         return wiki_path
 
     def generate_indexes(self, taxonomy: Any) -> list[Path]:
@@ -215,7 +220,9 @@ class WikiGenerator:
         created_files = []
 
         # 1. Root Index (Danh mục chính)
-        root_index = self._wiki_dir / "00_Danh_muc_thiet_bi.md"
+        root_dir = self._wiki_dir / "00_Danh_muc_thiet_bi"
+        root_dir.mkdir(parents=True, exist_ok=True)
+        root_index = root_dir / "00_Index.md"
         lines = [
             "# 🏥 Danh mục thiết bị y tế\n",
             f"> Cập nhật: {_now_iso()}\n\n",
@@ -226,12 +233,12 @@ class WikiGenerator:
             cat_label = cat["label_vi"]
             safe_cat_label = self._clean_name(cat_label)
             
-            lines.append(f"- [[{safe_cat_label}/Index|{cat_label}]]\n")
+            lines.append(f"- [[{safe_cat_label}/00_Index|{cat_label}]]\n")
             
             # 2. Category Index
             cat_dir = self._wiki_dir / safe_cat_label
             cat_dir.mkdir(exist_ok=True)
-            cat_index = cat_dir / "Index.md"
+            cat_index = cat_dir / "00_Index.md"
             
             cat_lines = [
                 f"# 📂 {cat_label}\n",
@@ -244,35 +251,38 @@ class WikiGenerator:
                 group_label = g["label_vi"]
                 safe_group_label = self._clean_name(group_label)
                 
-                cat_lines.append(f"- [[{safe_cat_label}/{safe_group_label}/Index|{group_label}]]\n")
+                cat_lines.append(f"- [[{safe_cat_label}/{safe_group_label}/00_Index|{group_label}]]\n")
                 
                 # 3. Group Index
                 group_dir = cat_dir / safe_group_label
                 group_dir.mkdir(exist_ok=True)
-                group_index = group_dir / "Index.md"
+                group_index = group_dir / "00_Index.md"
                 
                 # Scan files for static list
                 device_files = []
                 if group_dir.exists():
-                    device_files = sorted([f.name for f in group_dir.glob("*.md") if f.name != "Index.md"])
+                    device_files = sorted([f.name for f in group_dir.glob("*.md") if f.name != "!Index.md"])
 
                 group_lines = [
                     f"# 📑 {group_label}\n",
-                    f"> Thuộc: [[{safe_cat_label}/Index|{cat_label}]]\n",
+                    f"> Thuộc: [[{safe_cat_label}/00_Index|{cat_label}]]\n",
                     f"> Slug: `{g['slug']}`\n\n",
                     "## Danh sách thiết bị\n"
                 ]
                 
                 if device_files:
+                    group_lines.append(f"<!-- Files list -->\n")
                     for df in device_files:
-                        group_lines.append(f"- [[{df}|{df.replace('.md', '').replace('_', ' ')}]]\n")
+                        if df == "00_Index.md": continue
+                        name_display = df.replace('.md', '').replace('_', ' ')
+                        group_lines.append(f"- [[{df}|{name_display}]]\n")
                 else:
-                    group_lines.append("*(Chưa có thiết bị nào)*\n")
+                    group_lines.append("_(Chưa có thiết bị nào)_\n")
                     
-                group_index.write_text("".join(group_lines), encoding="utf-8")
+                group_index.write_text("\n".join(group_lines), encoding="utf-8")
                 created_files.append(group_index)
             
-            cat_index.write_text("".join(cat_lines), encoding="utf-8")
+            cat_index.write_text("\n".join(cat_lines), encoding="utf-8")
             created_files.append(cat_index)
 
         root_index.write_text("".join(lines), encoding="utf-8")
