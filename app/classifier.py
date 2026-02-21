@@ -6,7 +6,7 @@ Trích xuất doc_type, vendor, model và các metadata quan trọng.
 import os
 import json
 import logging
-import google.generativeai as genai
+import httpx
 from pathlib import Path
 from typing import Any, Dict
 import yaml
@@ -23,19 +23,26 @@ class MedicalClassifier:
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
         
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY không được tìm thấy trong môi trường.")
-        
-        genai.configure(api_key=api_key)
-        # Sử dụng model ID mới nhất từ danh sách hỗ trợ
-        self.model_name = "gemini-flash-latest"
-        self.model = genai.GenerativeModel(self.model_name)
+        self.api_key = os.getenv("NINEROUTER_API_KEY", "sk_9router")
+        router_config = self.config.get("services", {}).get("9router", {})
+        self.api_base = router_config.get("base_url", "http://localhost:20128/v1")
+        self.model_name = router_config.get("model", "if/glm-4.7")
+        self.timeout = router_config.get("timeout_seconds", 30)
+        self.max_retries = router_config.get("max_retries", 5)
+
+    # Rate limiting variables (class level)
+    _last_request_time: float = 0.0
+    _request_lock: Any = None
 
     async def classify_file(self, file_path: str) -> Dict[str, Any]:
         """
-        Gửi file đến Gemini để phân loại.
+        Gửi file đến Gemini để phân loại với rate limiting và retry.
         """
+        import asyncio
+        import time
+        if MedicalClassifier._request_lock is None:
+            MedicalClassifier._request_lock = asyncio.Lock()
+
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"Không tìm thấy file: {file_path}")
@@ -71,24 +78,70 @@ class MedicalClassifier:
         - Đừng quy chụp mọi thứ vào 'tim_mach' trừ khi nó thực sự liên quan đến mạch vành, stent, DSA.
         """
 
-        try:
-            # Tạm thời chỉ dùng tên file để demo nếu chưa xử lý PDF buffer hoàn chỉnh
-            # Tuy nhiên Gemini support file upload. Ở đây ta dùng tên file + text context.
-            response = self.model.generate_content(prompt)
-            
-            # Trích xuất JSON từ phản hồi (đề phòng Gemini trả thêm text)
-            text = response.text
-            json_start = text.find('{')
-            json_end = text.rfind('}') + 1
-            if json_start != -1 and json_end != -1:
-                result = json.loads(text[json_start:json_end])
-                return result
-            else:
-                logger.error(f"Gemini trả về không đúng định dạng JSON: {text}")
-                return {"doc_type": "khac", "summary": "Không thể phân loại tự động"}
-        except Exception as e:
-            logger.error(f"Lỗi khi gọi Gemini API: {e}")
-            return {"doc_type": "khac", "summary": str(e)}
+        max_retries = self.max_retries
+        base_delay = 2
+        url = f"{self.api_base}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1
+        }
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            for attempt in range(max_retries):
+                try:
+                    # Thực hiện Rate Limiting (1 request / 6 seconds -> max 10 RPM for free tier)
+                    async with MedicalClassifier._request_lock:
+                        now = time.monotonic()
+                        time_since_last = now - MedicalClassifier._last_request_time
+                        if time_since_last < 6.0:
+                            await asyncio.sleep(6.0 - time_since_last)
+                        MedicalClassifier._last_request_time = time.monotonic()
+
+                    response = await client.post(url, headers=headers, json=payload)
+                    response.raise_for_status()
+                    
+                    # Trích xuất JSON từ phản hồi API OpenAI standard
+                    response_data = response.json()
+                    content_str = response_data['choices'][0]['message']['content']
+                    
+                    try:
+                        result = json.loads(content_str)
+                        return result
+                    except json.JSONDecodeError:
+                        logger.error(f"9router trả về không đúng định dạng JSON: {content_str}")
+                        return {"doc_type": "khac", "summary": "Không thể phân loại tự động"}
+                        
+                except httpx.HTTPStatusError as e:
+                    # Catch 429 Too Many Requests
+                    if e.response.status_code == 429:
+                        if attempt < max_retries - 1:
+                            delay = base_delay * (2 ** attempt)
+                            logger.warning(f"Lỗi giới hạn API 9router (429). Thử lại sau {delay}s... (lần {attempt + 1}/{max_retries})")
+                            await asyncio.sleep(delay)
+                        else:
+                            logger.error(f"Vượt quá số lần thử lại ({max_retries} lần) do lỗi Rate Limit: {e}")
+                            raise Exception("Lỗi API (Rate Limit rớt 5 lần). Vui lòng thử lại sau.")
+                    else:
+                        logger.error(f"Lỗi HTTP {e.response.status_code} khi gọi 9router API: {e.response.text}")
+                        raise Exception(f"HTTP Error: {e.response.status_code}")
+                except httpx.RequestError as e:
+                    logger.error(f"Lỗi kết nối khi gọi 9router API: {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(base_delay * (2 ** attempt))
+                    else:
+                        raise Exception(str(e))
+                except Exception as e:
+                    logger.error(f"Lỗi không xác định: {e}")
+                    raise Exception(str(e))
 
 async def main():
     import sys

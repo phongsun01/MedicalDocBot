@@ -31,8 +31,12 @@ watcher:
     - ".git"
     - ".cache"
     - ".backup"
+    - ".obsidian"
     - "extracted"
     - "wiki"
+    - "data"
+    - "logs"
+    - "*.md"
   # Kích thước file tối thiểu để xử lý (bytes) — bỏ qua file rỗng
   min_file_size_bytes: 100
 
@@ -103,13 +107,16 @@ services:
     # Số kết quả tối đa trả về khi search
     max_search_results: 5
 
-  gemini:
+  9router:
     enabled: true
     # Model sử dụng cho phân loại và trích xuất
-    model: "gemini-1.5-flash"
-    # Model sử dụng cho embedding (tìm kiếm)
-    embedding_model: "text-embedding-004"
-    # API key sẽ được đọc từ biến môi trường GEMINI_API_KEY
+    model: "fireworks/accounts/fireworks/models/llama-v3p3-70b-instruct"
+    # Địa chỉ local port do pm2 / docker cung cấp
+    base_url: "http://localhost:20128/v1"
+    # Timeout HTTP request (giây)
+    timeout_seconds: 30
+    # Số lần retry khi lỗi Rate Limit hoặc Timeout
+    max_retries: 5
 
 logging:
   # Level: DEBUG, INFO, WARNING, ERROR

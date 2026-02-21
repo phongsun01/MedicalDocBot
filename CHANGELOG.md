@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0] - 2026-02-22
+
+### Added
+- **9router Integration**: Migrated the classifier from Google Gemini API to the local 9router gateway (port 20128).
+- OpenAI-compatible API support using `httpx` for efficient AI communications.
+- Native support for multiple local/cloud models via 9router (e.g., Qwen, Claude, Gemini).
+
+### Changed
+- Refactored `app/classifier.py` to remove `google-generativeai` dependency.
+- Updated `config.yaml` and `.env` to center around 9router settings.
+- Improved Error Handling with exponential backoff for HTTP 429 and connection issues.
+
 ## [2.1.2] - 2026-02-20
 
 ### Added
