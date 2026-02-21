@@ -1,6 +1,6 @@
 [project]
 name = "medicaldocbot"
-version = "2.3.1"
+version = "2.3.2"
 description = "Hệ thống quản lý kho tài liệu thiết bị y tế - 100% local"
 readme = "README.md"
 requires-python = ">=3.11"

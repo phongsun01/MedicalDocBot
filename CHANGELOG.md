@@ -1,6 +1,10 @@
 # Changelog
 
-## [2.3.1] - 2026-02-22
+## [2.3.2] - 2026-02-22
+### Fixed
+- **Robust JSON Parsing**: Upgraded `classifier.py` to use `json.JSONDecoder().raw_decode()` to extract valid JSON even when OpenRouter or proxy models append trailing garbage characters (e.g. `Server-Sent Events` data or `data: [DONE]`).
+- **Duplicate Event Suppression**: Refactored `process_event.py` to perform an early `store.get_file(file_path)` check. This permanently fixes the infinite feedback loop where `watcher.py` would catch its own subfolder `move` events and double-process already categorized files, resulting in false-positive duplicate error messages to Telegram.
+
 
 ### Fixed
 - **Telegram Bot**: 

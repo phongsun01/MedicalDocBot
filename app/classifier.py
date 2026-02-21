@@ -113,16 +113,47 @@ Lưu ý quan trọng:
                     response = await client.post(url, headers=headers, json=payload)
                     response.raise_for_status()
                     
-                    response_data = response.json()
+                    try:
+                        response_data = response.json()
+                    except json.JSONDecodeError as de:
+                        raw_text = response.text
+                        # Proxy (like openrouter via 9router) might append extra data like `\n\n: OPENROUTER PROCESSING...`
+                        # We must extract exactly the first valid JSON object natively.
+                        start_idx = raw_text.find("{")
+                        if start_idx != -1:
+                            try:
+                                response_data, _ = json.JSONDecoder().raw_decode(raw_text[start_idx:])
+                            except json.JSONDecodeError as de2:
+                                logger.error(f"RAW TEXT FROM 9ROUTER (length: {len(raw_text)}): {repr(raw_text)}")
+                                raise de2
+                        else:
+                            raise de
+
                     content_str = response_data['choices'][0]['message']['content']
                     
                     try:
+                        # Clean up markdown code blocks
+                        content_str = content_str.strip()
+                        if content_str.startswith("```json"):
+                            content_str = content_str[7:]
+                        if content_str.startswith("```"):
+                            content_str = content_str[3:]
+                        if content_str.endswith("```"):
+                            content_str = content_str[:-3]
+                        content_str = content_str.strip()
+                        
+                        # Fallback robust extraction
+                        if "{" in content_str and "}" in content_str:
+                            start_idx = content_str.find("{")
+                            end_idx = content_str.rfind("}") + 1
+                            content_str = content_str[start_idx:end_idx]
+
                         result = json.loads(content_str)
                         return result
-                    except json.JSONDecodeError:
-                        logger.error(f"9router trả về không đúng định dạng JSON: {content_str}")
+                    except json.JSONDecodeError as jde:
+                        logger.error(f"9router trả về không đúng định dạng JSON: {content_str} | Lỗi: {jde}")
                         return {"doc_type": "khac", "summary": "Không thể phân loại tự động"}
-                        
+
                 except httpx.HTTPStatusError as e:
                     # Catch 429 Too Many Requests
                     if e.response.status_code == 429:

@@ -55,6 +55,12 @@ async def process_new_file(
     """
     logger.info(f"--- Bắt đầu xử lý: {Path(file_path).name} ---")
     
+    # 0. Kiểm tra nếu file đã có trong DB ở đường dẫn hiện tại thì bỏ qua (chống loop của watcher)
+    existing = await store.get_file(file_path)
+    if existing:
+        logger.info(f"File đã tồn tại trong DB, bỏ qua: {file_path}")
+        return
+        
     # 1. Phân loại bằng AI
     try:
         classification = await classifier.classify_file(file_path)
