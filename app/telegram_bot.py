@@ -32,8 +32,7 @@ def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
     with open(config_path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-# Global store
-store: IndexStore | None = None
+# State
 config: dict[str, Any] = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -54,6 +53,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Lấy 5 file mới nhất."""
+    store: IndexStore | None = context.bot_data.get("store")
     if not store:
         await update.message.reply_text("❌ Lỗi: Database chưa kết nối.")
         return
@@ -93,6 +93,7 @@ async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyword = " ".join(context.args)
+    store: IndexStore | None = context.bot_data.get("store")
     if not store:
         return
 
@@ -124,17 +125,24 @@ async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Báo cáo trạng thái hệ thống."""
-    # Đếm số file trong DB
+    store: IndexStore | None = context.bot_data.get("store")
+    if not store:
+        await update.message.reply_text("🔴 Lỗi kết nối Database.", parse_mode=ParseMode.MARKDOWN)
+        return
+        
     try:
-        count = await store.count_files()
+        stats = await store.stats()
+        count = stats.get("total_files", 0)
+        model_name = config.get('services', {}).get('9router', {}).get('model', 'Unknown')
+        
         msg = (
             f"🟢 **Hệ thống đang hoạt động**\n"
             f"- 🗂 Tổng số file: `{count}`\n"
             f"- 📡 Bot: Online\n"
-            f"- 🧠 AI Model: `{config['services']['gemini']['model']}`"
+            f"- 🧠 AI Model: `{model_name}`"
         )
     except Exception as e:
-        msg = f"🔴 Lỗi kết nối Database: {e}"
+        msg = f"🔴 Lỗi lấy trạng thái: {e}"
         
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
@@ -148,7 +156,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await find(update, context)
 
 async def main():
-    global config, store
+    global config
     
     load_dotenv()
     
@@ -166,6 +174,9 @@ async def main():
         return
 
     app = ApplicationBuilder().token(token).build()
+    
+    # Lưu store vào bot_data để các handler sử dụng
+    app.bot_data["store"] = store
 
     # Handlers
     app.add_handler(CommandHandler("start", start))

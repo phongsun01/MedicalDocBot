@@ -208,10 +208,10 @@ class WikiGenerator:
             
         return wiki_path
 
-    def generate_indexes(self, taxonomy: Any, store: IndexStore | None = None) -> list[Path]:
+    def generate_indexes(self, taxonomy: Any) -> list[Path]:
         """
         Sinh Index.md tại gốc và từng folder con để Obsidain hiển thị đẹp.
-        Nếu truyền store, sẽ lấy danh sách thiết bị từ DB. Nếu không sẽ scan filesystem.
+        Scan filesystem để lấy danh sách thiết bị.
         """
         self._wiki_dir.mkdir(parents=True, exist_ok=True)
         created_files = []
@@ -257,15 +257,7 @@ class WikiGenerator:
                 group_dir.mkdir(exist_ok=True)
                 group_index = group_dir / "00_Index.md"
                 
-                # Scan files for static list - Prioritize DB if available
-                device_files = []
-                if store:
-                    # Chạy đồng bộ trong hàm debug/gen này (giả định dùng trong môi trường hỗ trợ async hoặc chạy loop)
-                    # Tuy nhiên generate_indexes hiện tại đồng bộ, nên ta cần cân nhắc.
-                    # Cho thực tế project này, ta scan filesystem nếu không muốn refactor generate_indexes thành async.
-                    # NHƯNG yêu cầu là "Nên lấy danh sách từ DB". 
-                    # Để đơn giản và tương thích, ta scan filesystem nhưng sửa lỗi filter.
-                    pass
+                # Scan files for static list
                 
                 if group_dir.exists():
                     device_files = sorted([f.name for f in group_dir.glob("*.md") if f.name != "00_Index.md"])

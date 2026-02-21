@@ -63,8 +63,8 @@ def test_wiki_index_generation(wiki_env):
     # Let's see if it runs without error
     gen.generate_indexes(t)
     
-    assert os.path.exists(os.path.join(gen._wiki_dir, "index_categories.md"))
-    assert os.path.exists(os.path.join(gen._wiki_dir, "index_groups.md"))
+    assert os.path.exists(os.path.join(gen._wiki_dir, "00_Danh_muc_thiet_bi/00_Index.md"))
+    assert os.path.exists(os.path.join(gen._wiki_dir, "Chẩn đoán hình ảnh/00_Index.md"))
 
 def test_device_wiki_update(wiki_env):
     from jinja2 import Environment, FileSystemLoader

@@ -1,5 +1,17 @@
 # Changelog
- 
+
+## [2.3.1] - 2026-02-22
+
+### Fixed
+- **Telegram Bot**: 
+    - Replaced non-existent `count_files` method with `stats()["total_files"]` for the `/status` command.
+    - Updated AI Model configuration reference from `gemini` to `9router`.
+    - Refactored global `store` state to use context-safe `app.bot_data["store"]`.
+- **Wiki Generator**: 
+    - Removed unused `store` parameter from `generate_indexes` to prevent confusion.
+    - Updated `test_wiki_generator.py` assertions to align with the new `00_Danh_muc_thiet_bi` root folder structure.
+
+
  ## [2.3.0] - 2026-02-22
  
  ### Added
