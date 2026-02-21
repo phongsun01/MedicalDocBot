@@ -1,4 +1,23 @@
 # Changelog
+ 
+ ## [2.3.0] - 2026-02-22
+ 
+ ### Added
+ - **Content-Based Classification**: Integrated `kreuzberg` to extract document text (first 3000 chars), significantly improving AI classification accuracy for vendors, models, and categories.
+ - **Shared Utilities**: Centralized hashing and sanitization logic in `app/utils.py`.
+ 
+ ### Changed
+ - **Architectural Refactoring**: 
+     - Applied Dependency Injection in `process_event.py` and `watcher.py` for core services.
+     - `IndexStore` now uses a persistent database connection for better performance.
+     - Switched to `ParseMode.MARKDOWN_V2` for Telegram notifications with improved character escaping.
+ - **Data Integrity**: Enforced strict SHA256 hashing; the system now stops if integrity checks fail.
+ - **Wiki Improvement**: `WikiGenerator` now correctly filters index files using `00_Index.md` convention.
+ 
+ ### Fixed
+ - Missing `Any` and `Dict` imports in `MedicalClassifier`.
+ - Asynchronous initialization issue with `_request_lock` in `MedicalClassifier`.
+ 
 
 ## [2.2.0] - 2026-02-22
 

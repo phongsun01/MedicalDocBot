@@ -1,25 +1,32 @@
 import asyncio
-import logging
-import sys
 import json
+import logging
+import os
+import re
+import shutil
+import sys
 from pathlib import Path
+from typing import Tuple, Any
+
+import yaml
+from dotenv import load_dotenv
+from telegram import Bot
+from telegram.constants import ParseMode
+from telegram.helpers import escape_markdown
+
 from app.classifier import MedicalClassifier
 from app.index_store import IndexStore
 from app.wiki_generator import WikiGenerator
 from app.slug import build_device_slug
 from app.taxonomy import Taxonomy
-import yaml
-import os
-import shutil
-import re
-from dotenv import load_dotenv
-from telegram import Bot
-from telegram.constants import ParseMode
+from app.utils import compute_sha256, clean_name
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Helper functions moved or removed (Dependency Injection used instead)
 
 DOC_TYPE_MAP = {
     "ky_thuat": "Kỹ thuật",
@@ -33,89 +40,95 @@ DOC_TYPE_MAP = {
     "khac": "Khác"
 }
 
-def clean_name(s: str) -> str:
-    """Sanitize filename (giữ lại tiếng Việt, thay ký tự đặc biệt bằng _)."""
-    s = s.replace("/", "_").replace("\\", "_")
-    return re.sub(r'[<>:"|?*]', '', s).strip()
+# clean_name moved to app.utils
 
-async def process_new_file(file_path: str):
-    config_path = "config.yaml"
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    
-    # 1. Khởi tạo các thành phần
-    classifier = MedicalClassifier(config_path)
-    store = IndexStore(config["paths"]["db_file"])
-    wiki = WikiGenerator(config_path)
-    taxonomy = Taxonomy(config["paths"]["taxonomy_file"])
-    
-    await store.init()
-    
-    # 2. Phân loại bằng Gemini
+async def process_new_file(
+    file_path: str,
+    config: dict,
+    classifier: MedicalClassifier,
+    store: IndexStore,
+    wiki: WikiGenerator,
+    taxonomy: Taxonomy
+):
+    """
+    Orchestrates the processing of a new document.
+    """
     logger.info(f"--- Bắt đầu xử lý: {Path(file_path).name} ---")
-    classification = await classifier.classify_file(file_path)
-    logger.info(f"Kết quả phân loại: {json.dumps(classification, ensure_ascii=False)}")
     
-    doc_type = classification.get("doc_type", "khac")
-    vendor = classification.get("vendor", "Unknown")
-    model = classification.get("model", "Unknown")
-    summary = classification.get("summary", "")
-    
+    # 1. Phân loại bằng AI
+    try:
+        classification = await classifier.classify_file(file_path)
+        logger.info(f"Kết quả phân loại: {json.dumps(classification, ensure_ascii=False)}")
+        
+        doc_type = classification.get("doc_type", "khac")
+        vendor = classification.get("vendor", "Unknown")
+        model = classification.get("model", "Unknown")
+        summary = classification.get("summary", "")
+        
+    except Exception as e:
+        logger.error(f"Dừng tiến trình do lỗi phân loại AI: {e}")
+        
+        # Báo lỗi lên Telegram (MarkdownV2)
+        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        group_chat_id = config["services"]["telegram"].get("group_chat_id")
+        if token and group_chat_id:
+            try:
+                bot = Bot(token=token)
+                safe_filename = escape_markdown(Path(file_path).name, version=2)
+                safe_error = escape_markdown(str(e), version=2)
+                error_report = f"❌ *Lỗi phân loại tài liệu\\!*\n\n" \
+                               f"*File:* `{safe_filename}`\n" \
+                               f"*Lỗi:* {safe_error}\n\n" \
+                               f"Vui lòng kiểm tra lại quota hoặc thử lại sau\\."
+                await bot.send_message(chat_id=group_chat_id, text=error_report, parse_mode=ParseMode.MARKDOWN_V2)
+            except Exception as tg_err:
+                logger.error(f"Lỗi gửi Telegram báo lỗi: {tg_err}")
+                
+        return
+        
     # Mapping doc_type sang tiếng Việt
     doc_type_vi = DOC_TYPE_MAP.get(doc_type, doc_type)
     
-    # 3. Tạo slugs
+    # 2. Tạo slugs
     device_slug = build_device_slug(vendor, model)
-    # Parse category/group từ classification result
     full_category_slug = classification.get("category_slug", "")
+    
     if "/" in full_category_slug:
         parts = full_category_slug.split("/")
         category_slug = clean_name(parts[0])
         group_slug = clean_name(parts[1])
     else:
-        # Fallback nếu AI không trả về đúng format
         category_slug = clean_name(full_category_slug) if full_category_slug else "chua_phan_loai"
         group_slug = "khac"
     
-    # 3b. Di chuyển file vào thư mục phân loại
-    # Lấy nhãn tiếng Việt để tạo thư mục (giống Wiki)
-    cat_data = taxonomy.get_category(category_slug)
-    cat_label = cat_data["label_vi"] if cat_data else category_slug
-    
-    group_data = taxonomy.get_group(category_slug, group_slug)
-    group_label = group_data["label_vi"] if group_data else group_slug
-    
-    # Xây dựng đường dẫn đích
+    # 3. Di chuyển file vào thư mục phân loại
     root = Path(os.path.expandvars(os.path.expanduser(config["paths"]["medical_devices_root"])))
-    target_relative = Path(clean_name(cat_label)) / clean_name(group_label)
+    target_relative = Path(category_slug) / group_slug / device_slug
     target_dir = root / target_relative
     target_dir.mkdir(parents=True, exist_ok=True)
     
     new_path = target_dir / Path(file_path).name
     
     # Chỉ di chuyển nếu file chưa ở đúng chỗ
-    moved = False
     if Path(file_path).resolve() != new_path.resolve():
         try:
+            # Xóa entry cũ trong DB trước nếu tồn tại (đề phòng move lỗi hoặc file ghi đè)
+            await store.delete_file(str(file_path)) 
             shutil.move(file_path, new_path)
             logger.info(f"Đã di chuyển file đến: {new_path}")
-            # Xóa entry cũ trong DB nếu tồn tại (để tránh double)
-            await store.delete_file(str(file_path)) 
-            file_path = str(new_path) # Cập nhật file_path để lưu vào DB
-            moved = True
+            file_path = str(new_path)
         except Exception as e:
             logger.error(f"Lỗi khi di chuyển file: {e}")
-    else:
-        logger.info("File đã ở đúng thư mục phân loại.")
+            # Nếu move fail, ta vẫn tiếp tục với original path? Không, tốt nhất là dừng.
+            return
             
-    # 4. Lưu vào Database
-    sha256 = "dummy_sha256" # Sẽ dùng compute_sha256 trong prod
-    from app.index_store import compute_sha256
+    # 4. Lưu vào Database (Strict Integrity)
     try:
         sha256 = compute_sha256(file_path)
-    except:
-        pass
-    # Lấy kích thước file mới từ path đã di chuyển
+    except Exception as e:
+        logger.error(f"Lỗi nghiêm trọng: Không thể tính sha256 cho {file_path}. Hủy xử lý. {e}")
+        raise # Strict integrity
+        
     try:
         size_bytes = os.path.getsize(file_path)
     except OSError:
@@ -134,7 +147,7 @@ async def process_new_file(file_path: str):
         size_bytes=size_bytes,
         confirmed=True
     )
-    logger.info(f"Đã lưu vào DB với ID: {file_path}")
+    logger.info(f"Đã lưu vào DB: {file_path}")
     
     # 5. Cập nhật Wiki
     device_info = {
@@ -144,43 +157,59 @@ async def process_new_file(file_path: str):
         "category_slug": f"{category_slug}/{group_slug}"
     }
     
-    # Lấy tất cả file của device này để render wiki
     all_files = await store.search(device_slug=device_slug)
     wiki_path = wiki.update_device_wiki(device_slug, device_info, all_files, taxonomy=taxonomy)
     logger.info(f"Wiki đã được cập nhật: {wiki_path}")
     
-    # 6. Gửi báo cáo Telegram qua OpenClaw
-    location_msg = f"\n📁 **Đã lưu vào:** `{target_relative}`" if moved else ""
+    # 6. Gửi báo cáo Telegram (MarkdownV2)
+    safe_vendor = escape_markdown(vendor, version=2)
+    safe_model = escape_markdown(model, version=2)
+    safe_doc_type = escape_markdown(doc_type_vi, version=2)
+    safe_summary = escape_markdown(summary, version=2)
+    safe_filename = escape_markdown(Path(file_path).name, version=2)
+    safe_location = escape_markdown(str(target_relative), version=2)
     
-    report = f"📄 **Phát hiện tài liệu mới!**\n\n" \
-             f"**File:** `{Path(file_path).name}`\n" \
-             f"**Hãng:** {vendor}\n" \
-             f"**Model:** {model}\n" \
-             f"**Loại:** {doc_type_vi}\n" \
-             f"**Tóm tắt:** {summary}\n" \
-             f"{location_msg}\n\n" \
-             f"✅ Đã cập nhật Wiki & Database."
+    report = f"📄 *Phát hiện tài liệu mới\\!*\n\n" \
+             f"*File:* `{safe_filename}`\n" \
+             f"*Hãng:* {safe_vendor}\n" \
+             f"*Model:* {safe_model}\n" \
+             f"*Loại:* {safe_doc_type}\n" \
+             f"*Tóm tắt:* {safe_summary}\n\n" \
+             f"📁 *Đã lưu vào:* `{safe_location}`\n\n" \
+             f"✅ Đã cập nhật Wiki & Database\\."
     
-    # Gửi tin nhắn qua Telegram Bot API (Direct)
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     group_chat_id = config["services"]["telegram"].get("group_chat_id")
     
     if token and group_chat_id:
         try:
             bot = Bot(token=token)
-            # escape special markdown chars if needed, but for now trust report format or use MarkdownV2
-            # Report đang dùng markdown legacy (**bold**, `code`), phù hợp với ParseMode.MARKDOWN
-            await bot.send_message(chat_id=group_chat_id, text=report, parse_mode=ParseMode.MARKDOWN)
+            await bot.send_message(chat_id=group_chat_id, text=report, parse_mode=ParseMode.MARKDOWN_V2)
             logger.info(f"Đã gửi báo cáo Telegram tới: {group_chat_id}")
         except Exception as e:
             logger.error(f"Lỗi gửi Telegram: {e}")
-    else:
-        logger.warning("Không tìm thấy TELEGRAM_BOT_TOKEN hoặc group_chat_id, bỏ qua gửi tin.")
     
     logger.info("--- Xử lý hoàn tất ---")
 
-if __name__ == "__main__":
+async def main_cli():
     if len(sys.argv) < 2:
         print("Usage: python process_event.py <file_path>")
-    else:
-        asyncio.run(process_new_file(sys.argv[1]))
+        return
+        
+    config_path = "config.yaml"
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+        
+    classifier = MedicalClassifier(config_path)
+    store = IndexStore(config["paths"]["db_file"])
+    await store.init()
+    wiki = WikiGenerator(config_path)
+    taxonomy = Taxonomy(config["paths"]["taxonomy_file"])
+    
+    try:
+        await process_new_file(sys.argv[1], config, classifier, store, wiki, taxonomy)
+    finally:
+        await store.close()
+
+if __name__ == "__main__":
+    asyncio.run(main_cli())

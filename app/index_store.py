@@ -8,7 +8,6 @@ Idempotent: upsert theo path (không tạo duplicate).
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 from datetime import datetime, timezone
@@ -16,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from app.utils import compute_sha256
 
 logger = logging.getLogger(__name__)
 
@@ -59,21 +59,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def compute_sha256(file_path: str | Path) -> str:
-    """
-    Tính SHA256 của file.
-
-    Args:
-        file_path: Đường dẫn file
-
-    Returns:
-        Chuỗi hex SHA256
-    """
-    sha = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            sha.update(chunk)
-    return sha.hexdigest()
+# compute_sha256 moved to app.utils
 
 
 class IndexStore:
@@ -96,32 +82,42 @@ class IndexStore:
         """
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn: aiosqlite.Connection | None = None
 
     async def init(self) -> None:
         """Tạo schema nếu chưa có và migrate nếu cần."""
-        async with aiosqlite.connect(self._db_path) as db:
-            await db.executescript(_SCHEMA_SQL)
+        if not self._conn:
+            self._conn = await aiosqlite.connect(self._db_path)
+            self._conn.row_factory = aiosqlite.Row
             
-            # Migration: Kiểm tra và thêm cột mới nếu thiếu (cho DB cũ)
-            async with db.execute("PRAGMA table_info(files)") as cursor:
-                columns = [row[1] for row in await cursor.fetchall()]
+        await self._conn.executescript(_SCHEMA_SQL)
+        
+        # Migration: Kiểm tra và thêm cột mới nếu thiếu (cho DB cũ)
+        async with self._conn.execute("PRAGMA table_info(files)") as cursor:
+            columns = [row[1] for row in await cursor.fetchall()]
             
-            if "vendor" not in columns:
-                logger.info("⚡️ Migrating DB: Adding column 'vendor'")
-                await db.execute("ALTER TABLE files ADD COLUMN vendor TEXT")
-            if "model" not in columns:
-                logger.info("⚡️ Migrating DB: Adding column 'model'")
-                await db.execute("ALTER TABLE files ADD COLUMN model TEXT")
-            if "summary" not in columns:
-                logger.info("⚡️ Migrating DB: Adding column 'summary'")
-                await db.execute("ALTER TABLE files ADD COLUMN summary TEXT")
-                
-            # Tạo index cho cột mới sau khi chắc chắn cột đã tồn tại
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_vendor ON files(vendor)")
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_model ON files(model)")
+        if "vendor" not in columns:
+            logger.info("⚡️ Migrating DB: Adding column 'vendor'")
+            await self._conn.execute("ALTER TABLE files ADD COLUMN vendor TEXT")
+        if "model" not in columns:
+            logger.info("⚡️ Migrating DB: Adding column 'model'")
+            await self._conn.execute("ALTER TABLE files ADD COLUMN model TEXT")
+        if "summary" not in columns:
+            logger.info("⚡️ Migrating DB: Adding column 'summary'")
+            await self._conn.execute("ALTER TABLE files ADD COLUMN summary TEXT")
             
-            await db.commit()
+        # Tạo index cho cột mới sau khi chắc chắn cột đã tồn tại
+        await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_vendor ON files(vendor)")
+        await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_model ON files(model)")
+        
+        await self._conn.commit()
         logger.info("IndexStore khởi tạo: %s", self._db_path)
+
+    async def close(self) -> None:
+        """Đóng kết nối database."""
+        if self._conn:
+            await self._conn.close()
+            self._conn = None
 
     async def upsert_file(
         self,
@@ -163,55 +159,57 @@ class IndexStore:
             except OSError:
                 size_bytes = 0
 
-        async with aiosqlite.connect(self._db_path) as db:
-            # Kiểm tra đã tồn tại chưa
-            async with db.execute(
-                "SELECT id, created_at FROM files WHERE path = ?", (path_str,)
-            ) as cursor:
-                existing = await cursor.fetchone()
+        if not self._conn:
+            await self.init()
 
-            if existing:
-                # Cập nhật record hiện có
-                await db.execute(
-                    """
-                    UPDATE files SET
-                        sha256 = ?, doc_type = ?, device_slug = ?,
-                        category_slug = ?, group_slug = ?,
-                        vendor = ?, model = ?, summary = ?,
-                        size_bytes = ?, confirmed = ?, updated_at = ?, indexed_at = ?
-                    WHERE path = ?
-                    """,
-                    (
-                        sha256, doc_type, device_slug,
-                        category_slug, group_slug,
-                        vendor, model, summary,
-                        size_bytes, int(confirmed), now, now,
-                        path_str,
-                    ),
-                )
-                record_id = existing[0]
-                logger.debug("Cập nhật file: %s (id=%d)", path_str, record_id)
-            else:
-                # Thêm record mới
-                cursor = await db.execute(
-                    """
-                    INSERT INTO files
-                        (path, sha256, doc_type, device_slug, category_slug, group_slug,
-                         vendor, model, summary,
-                         size_bytes, confirmed, created_at, updated_at, indexed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        path_str, sha256, doc_type, device_slug,
-                        category_slug, group_slug,
-                        vendor, model, summary,
-                        size_bytes, int(confirmed), now, now, now,
-                    ),
-                )
-                record_id = cursor.lastrowid
-                logger.debug("Thêm file mới: %s (id=%d)", path_str, record_id)
+        # Kiểm tra đã tồn tại chưa
+        async with self._conn.execute(
+            "SELECT id, created_at FROM files WHERE path = ?", (path_str,)
+        ) as cursor:
+            existing = await cursor.fetchone()
 
-            await db.commit()
+        if existing:
+            # Cập nhật record hiện có
+            await self._conn.execute(
+                """
+                UPDATE files SET
+                    sha256 = ?, doc_type = ?, device_slug = ?,
+                    category_slug = ?, group_slug = ?,
+                    vendor = ?, model = ?, summary = ?,
+                    size_bytes = ?, confirmed = ?, updated_at = ?, indexed_at = ?
+                WHERE path = ?
+                """,
+                (
+                    sha256, doc_type, device_slug,
+                    category_slug, group_slug,
+                    vendor, model, summary,
+                    size_bytes, int(confirmed), now, now,
+                    path_str,
+                ),
+            )
+            record_id = existing[0]
+            logger.debug("Cập nhật file: %s (id=%d)", path_str, record_id)
+        else:
+            # Thêm record mới
+            cursor = await self._conn.execute(
+                """
+                INSERT INTO files
+                    (path, sha256, doc_type, device_slug, category_slug, group_slug,
+                        vendor, model, summary,
+                        size_bytes, confirmed, created_at, updated_at, indexed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    path_str, sha256, doc_type, device_slug,
+                    category_slug, group_slug,
+                    vendor, model, summary,
+                    size_bytes, int(confirmed), now, now, now,
+                ),
+            )
+            record_id = cursor.lastrowid
+            logger.debug("Thêm file mới: %s (id=%d)", path_str, record_id)
+
+        await self._conn.commit()
 
         return record_id
     
@@ -222,10 +220,10 @@ class IndexStore:
         Args:
             path: Đường dẫn file cần xóa
         """
-        async with aiosqlite.connect(self._db_path) as db:
-            await db.execute("DELETE FROM files WHERE path = ?", (str(path),))
-            await db.commit()
-            logger.info("Đã xóa file khỏi DB: %s", path)
+        if not self._conn: await self.init()
+        await self._conn.execute("DELETE FROM files WHERE path = ?", (str(path),))
+        await self._conn.commit()
+        logger.info("Đã xóa file khỏi DB: %s", path)
 
     async def get_file(self, path: str | Path) -> dict[str, Any] | None:
         """
@@ -237,13 +235,12 @@ class IndexStore:
         Returns:
             Dict thông tin file hoặc None nếu không tìm thấy
         """
-        async with aiosqlite.connect(self._db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM files WHERE path = ?", (str(path),)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return dict(row) if row else None
+        if not self._conn: await self.init()
+        async with self._conn.execute(
+            "SELECT * FROM files WHERE path = ?", (str(path),)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
 
     async def search(
         self,
@@ -273,15 +270,12 @@ class IndexStore:
         conditions = []
         params: list[Any] = []
 
-        if doc_type:
-            conditions.append("doc_type = ?")
-            params.append(doc_type)
-        if device_slug:
-            conditions.append("device_slug = ?")
-            params.append(device_slug)
         if category_slug:
             conditions.append("category_slug = ?")
             params.append(category_slug)
+        if device_slug:
+            conditions.append("device_slug = ?")
+            params.append(device_slug)
         if keyword:
             # Tìm kiếm thông minh: path OR vendor OR model OR summary
             kw = f"%{keyword}%"
@@ -290,15 +284,22 @@ class IndexStore:
         if confirmed_only:
             conditions.append("confirmed = 1")
 
+        # Validate order_by to prevent SQL injection
+        allowed_sort_columns = {"path", "sha256", "doc_type", "device_slug", "category_slug", "updated_at", "created_at", "indexed_at", "vendor", "model", "size_bytes"}
+        order_parts = order_by.lower().split()
+        if not order_parts or order_parts[0] not in allowed_sort_columns:
+            order_by = "updated_at DESC"
+        
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         sql = f"SELECT * FROM files {where} ORDER BY {order_by} LIMIT ?"
         params.append(limit)
 
-        async with aiosqlite.connect(self._db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(sql, params) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
+        if not self._conn: await self.init()
+        if not self._conn: return [] # Should not happen after init
+        
+        async with self._conn.execute(sql, params) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
 
     async def get_latest_by_device_and_type(
         self, device_slug: str, doc_type: str
@@ -332,18 +333,20 @@ class IndexStore:
         Returns:
             Dict {doc_type: count}
         """
-        async with aiosqlite.connect(self._db_path) as db:
-            async with db.execute(
-                """
-                SELECT doc_type, COUNT(*) as cnt
-                FROM files
-                WHERE device_slug = ?
-                GROUP BY doc_type
-                """,
-                (device_slug,),
-            ) as cursor:
-                rows = await cursor.fetchall()
-                return {row[0]: row[1] for row in rows}
+        if not self._conn: await self.init()
+        if not self._conn: return {}
+        
+        async with self._conn.execute(
+            """
+            SELECT doc_type, COUNT(*) as cnt
+            FROM files
+            WHERE device_slug = ?
+            GROUP BY doc_type
+            """,
+            (device_slug,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return {row[0]: row[1] for row in rows}
 
     async def log_event(self, event_type: str, file_path: str) -> None:
         """
@@ -353,12 +356,12 @@ class IndexStore:
             event_type: Loại event (created, modified, deleted)
             file_path: Đường dẫn file
         """
-        async with aiosqlite.connect(self._db_path) as db:
-            await db.execute(
-                "INSERT INTO events (event_type, file_path, ts) VALUES (?, ?, ?)",
-                (event_type, file_path, _now_iso()),
-            )
-            await db.commit()
+        if not self._conn: await self.init()
+        await self._conn.execute(
+            "INSERT INTO events (event_type, file_path, ts) VALUES (?, ?, ?)",
+            (event_type, file_path, _now_iso()),
+        )
+        await self._conn.commit()
 
     async def stats(self) -> dict[str, Any]:
         """
@@ -367,22 +370,22 @@ class IndexStore:
         Returns:
             Dict thống kê: total_files, by_doc_type, by_category
         """
-        async with aiosqlite.connect(self._db_path) as db:
-            # Tổng số files
-            async with db.execute("SELECT COUNT(*) FROM files") as cur:
-                total = (await cur.fetchone())[0]
+        if not self._conn: await self.init()
+        # Tổng số files
+        async with self._conn.execute("SELECT COUNT(*) FROM files") as cur:
+            total = (await cur.fetchone())[0]
 
-            # Theo doc_type
-            async with db.execute(
-                "SELECT doc_type, COUNT(*) FROM files GROUP BY doc_type"
-            ) as cur:
-                by_type = {row[0]: row[1] for row in await cur.fetchall()}
+        # Theo doc_type
+        async with self._conn.execute(
+            "SELECT doc_type, COUNT(*) FROM files GROUP BY doc_type"
+        ) as cur:
+            by_type = {row[0]: row[1] for row in await cur.fetchall()}
 
-            # Theo category
-            async with db.execute(
-                "SELECT category_slug, COUNT(*) FROM files WHERE category_slug IS NOT NULL GROUP BY category_slug"
-            ) as cur:
-                by_cat = {row[0]: row[1] for row in await cur.fetchall()}
+        # Theo category
+        async with self._conn.execute(
+            "SELECT category_slug, COUNT(*) FROM files WHERE category_slug IS NOT NULL GROUP BY category_slug"
+        ) as cur:
+            by_cat = {row[0]: row[1] for row in await cur.fetchall()}
 
         return {
             "total_files": total,

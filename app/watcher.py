@@ -27,6 +27,10 @@ from watchdog.observers import Observer
 
 # Import logic xử lý từ process_event.py
 from app.process_event import process_new_file
+from app.classifier import MedicalClassifier
+from app.index_store import IndexStore
+from app.wiki_generator import WikiGenerator
+from app.taxonomy import Taxonomy
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +190,21 @@ class MedicalWatcher:
         self._event_queue: asyncio.Queue = asyncio.Queue()
         self._debouncer = EventDebouncer(self._debounce)
         self._running = False
+        
+        # Services
+        self._classifier = None
+        self._store = None
+        self._wiki = None
+        self._taxonomy = None
+
+    async def _init_services(self) -> None:
+        """Khởi tạo các dịch vụ cần thiết."""
+        self._classifier = MedicalClassifier("config.yaml")
+        self._store = IndexStore(self._config["paths"]["db_file"])
+        await self._store.init()
+        self._wiki = WikiGenerator("config.yaml")
+        self._taxonomy = Taxonomy(self._config["paths"]["taxonomy_file"])
+        logger.info("✅ Đã khởi tạo các dịch vụ (Classifier, Store, Wiki, Taxonomy)")
 
     def _setup_logging(self) -> None:
         """Cấu hình logging JSON Lines."""
@@ -230,7 +249,14 @@ class MedicalWatcher:
             
             # Gọi logic xử lý Phase 1.0 (Classify -> Move -> DB -> Wiki -> Notify)
             if event["event"] in ("created", "moved"):
-                await process_new_file(event["path"])
+                await process_new_file(
+                    event["path"],
+                    self._config,
+                    self._classifier,
+                    self._store,
+                    self._wiki,
+                    self._taxonomy
+                )
                 
         except Exception as e:
             # Không crash daemon
@@ -299,8 +325,11 @@ class MedicalWatcher:
         signal.signal(signal.SIGTERM, _shutdown)
 
         try:
+            await self._init_services()
             await self._consumer()
         finally:
+            if self._store:
+                await self._store.close()
             observer.stop()
             observer.join()
             logger.info("✅ Watcher đã dừng")

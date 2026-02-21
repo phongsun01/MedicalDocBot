@@ -156,7 +156,7 @@ async def main():
     config = load_config()
     
     # Init DB
-    store = IndexStore(config["paths"]["database"]) # Changed from db_file to database
+    store = IndexStore(config["paths"]["db_file"])
     await store.init()
     
     # Init Bot

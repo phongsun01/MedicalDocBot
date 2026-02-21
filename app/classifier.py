@@ -3,13 +3,17 @@ classifier.py — Phân loại tài liệu y tế sử dụng Gemini Generative 
 Trích xuất doc_type, vendor, model và các metadata quan trọng.
 """
 
-import os
+import asyncio
 import json
 import logging
-import httpx
+import os
+import time
 from pathlib import Path
 from typing import Any, Dict
+
+import httpx
 import yaml
+from kreuzberg import extract_file
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -34,52 +38,49 @@ class MedicalClassifier:
     _last_request_time: float = 0.0
     _request_lock: Any = None
 
-    async def classify_file(self, file_path: str) -> Dict[str, Any]:
+    async def classify_file(self, file_path: str, max_retries: int | None = None) -> dict:
         """
-        Gửi file đến Gemini để phân loại với rate limiting và retry.
+        Phân loại tài liệu bằng AI qua 9router local gateway.
+        Đọc nội dung file nếu có thể để tăng độ chính xác.
         """
-        import asyncio
-        import time
         if MedicalClassifier._request_lock is None:
             MedicalClassifier._request_lock = asyncio.Lock()
+            
+        if max_retries is None:
+            max_retries = self.max_retries
+            
+        file_path_obj = Path(file_path)
+        logger.info(f"Đang phân loại file: {file_path_obj.name} bằng {self.model_name}")
+        
+        # Trích xuất nội dung file (vài nghìn ký tự đầu)
+        content_preview = ""
+        try:
+            extraction_result = await extract_file(file_path_obj)
+            content_preview = extraction_result.content[:3000] # Lấy 3000 ký tự đầu
+            logger.info(f"Đã trích xuất {len(content_preview)} ký tự từ file")
+        except Exception as e:
+            logger.warning(f"Không thể trích xuất nội dung từ {file_path_obj.name}: {e}. Phân loại dựa trên tên file.")
 
-        path = Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Không tìm thấy file: {file_path}")
-
-        logger.info(f"Đang phân loại file: {path.name} bằng {self.model_name}")
-
-        # Prompt hướng dẫn Gemini
-        valid_types = self.config.get('valid_doc_types', ['ky_thuat', 'bao_gia', 'hop_dong', 'khac'])
         prompt = f"""
-        Bạn là một chuyên gia về thiết bị y tế. Hãy phân loại tài liệu sau:
-        Tên file: {path.name}
-        
-        Nhiệm vụ:
-        1. Xác định 'doc_type' từ danh sách: {valid_types}
-        2. Trích xuất 'vendor' (Hãng sản xuất).
-        3. Trích xuất 'model' (Mã hiệu thiết bị).
-        4. Xác định 'category' phù hợp dựa trên nội dung.
-        5. Tóm tắt nội dung tài liệu trong 1 câu tiếng Việt.
+Bạn là một trợ lý chuyên gia về thiết bị y tế. Nhiệm vụ của bạn là phân loại tài liệu sau.
 
-        Trả về kết quả dưới định dạng JSON duy nhất như sau:
-        {{
-            "doc_type": "...",
-            "vendor": "...",
-            "model": "...",
-            "device_slug": "...",
-            "category_slug": "...", 
-            "summary": "..."
-        }}
-        
-        Lưu ý quan trọng:
-        - "category_slug" PHẢI khớp với cấu trúc thư mục hiện có nếu có thể (VD: chan_doan_hinh_anh/x_quang, tim_mach/can_thiep, ...).
-        - Nếu không chắc chắn, hãy để trống hoặc suy luận logic nhất từ tên thiết bị.
-        - Đừng quy chụp mọi thứ vào 'tim_mach' trừ khi nó thực sự liên quan đến mạch vành, stent, DSA.
-        """
+Tên file: {file_path_obj.name}
+Nội dung trích xuất (nếu có):
+{content_preview}
 
-        max_retries = self.max_retries
-        base_delay = 2
+Dựa vào tên file và nội dung, hãy trả về kết quả dưới dạng JSON với các trường sau:
+- doc_type: [ky_thuat, cau_hinh, bao_gia, trung_thau, hop_dong, so_sanh, thong_tin, lien_ket, khac]
+- vendor: [Tên hãng sản xuất, viết hoa đúng chuẩn, e.g. GE Healthcare, Philips, Siemens]
+- model: [Model thiết bị, viết hoa đúng chuẩn]
+- category_slug: [ID nhóm thiết bị theo định dạng "nhom_lon/nhom_con", ví dụ: "chan_doan_hinh_anh/x_quang"]
+- summary: [Tóm tắt ngắn gọn nội dung tài liệu bằng tiếng Việt, tối đa 20 từ]
+
+Lưu ý quan trọng:
+1. Nếu là tài liệu liên quan đến Tim mạch, hãy chọn category_slug là "tim_mach/can_thiep" hoặc "tim_mach/chan_doan".
+2. Nếu không rõ model hoặc vendor, hãy ghi "Unknown".
+3. Trả về DUY NHẤT một JSON object.
+"""
+        
         url = f"{self.api_base}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -95,10 +96,13 @@ class MedicalClassifier:
             "temperature": 0.1
         }
 
+        # Dùng lại retry logic đã có
+        base_delay = 2.0
+        
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for attempt in range(max_retries):
                 try:
-                    # Thực hiện Rate Limiting (1 request / 6 seconds -> max 10 RPM for free tier)
+                    # Rate Limiting
                     async with MedicalClassifier._request_lock:
                         now = time.monotonic()
                         time_since_last = now - MedicalClassifier._last_request_time
@@ -109,7 +113,6 @@ class MedicalClassifier:
                     response = await client.post(url, headers=headers, json=payload)
                     response.raise_for_status()
                     
-                    # Trích xuất JSON từ phản hồi API OpenAI standard
                     response_data = response.json()
                     content_str = response_data['choices'][0]['message']['content']
                     
