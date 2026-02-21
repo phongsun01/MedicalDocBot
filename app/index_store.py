@@ -105,10 +105,22 @@ class IndexStore:
         if "summary" not in columns:
             logger.info("⚡️ Migrating DB: Adding column 'summary'")
             await self._conn.execute("ALTER TABLE files ADD COLUMN summary TEXT")
+        if "search_text" not in columns:
+            logger.info("⚡️ Migrating DB: Adding column 'search_text'")
+            await self._conn.execute("ALTER TABLE files ADD COLUMN search_text TEXT")
             
         # Tạo index cho cột mới sau khi chắc chắn cột đã tồn tại
         await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_vendor ON files(vendor)")
         await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_model ON files(model)")
+        
+        # Cập nhật dữ liệu search_text cho các file cũ
+        import unidecode
+        async with self._conn.execute("SELECT id, path, vendor, model, summary FROM files WHERE search_text IS NULL") as cursor:
+            old_rows = await cursor.fetchall()
+            for row in old_rows:
+                search_data = f"{row[1]} {row[2] or ''} {row[3] or ''} {row[4] or ''}".lower()
+                search_text = unidecode.unidecode(search_data)
+                await self._conn.execute("UPDATE files SET search_text = ? WHERE id = ?", (search_text, row[0]))
         
         await self._conn.commit()
         logger.info("IndexStore khởi tạo: %s", self._db_path)
@@ -168,6 +180,10 @@ class IndexStore:
         ) as cursor:
             existing = await cursor.fetchone()
 
+        import unidecode
+        search_data = f"{path_str} {vendor or ''} {model or ''} {summary or ''} {doc_type}".lower()
+        search_text = unidecode.unidecode(search_data)
+
         if existing:
             # Cập nhật record hiện có
             await self._conn.execute(
@@ -176,7 +192,8 @@ class IndexStore:
                     sha256 = ?, doc_type = ?, device_slug = ?,
                     category_slug = ?, group_slug = ?,
                     vendor = ?, model = ?, summary = ?,
-                    size_bytes = ?, confirmed = ?, updated_at = ?, indexed_at = ?
+                    size_bytes = ?, confirmed = ?, updated_at = ?, indexed_at = ?,
+                    search_text = ?
                 WHERE path = ?
                 """,
                 (
@@ -184,6 +201,7 @@ class IndexStore:
                     category_slug, group_slug,
                     vendor, model, summary,
                     size_bytes, int(confirmed), now, now,
+                    search_text,
                     path_str,
                 ),
             )
@@ -196,14 +214,14 @@ class IndexStore:
                 INSERT INTO files
                     (path, sha256, doc_type, device_slug, category_slug, group_slug,
                         vendor, model, summary,
-                        size_bytes, confirmed, created_at, updated_at, indexed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        size_bytes, confirmed, created_at, updated_at, indexed_at, search_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     path_str, sha256, doc_type, device_slug,
                     category_slug, group_slug,
                     vendor, model, summary,
-                    size_bytes, int(confirmed), now, now, now,
+                    size_bytes, int(confirmed), now, now, now, search_text,
                 ),
             )
             record_id = cursor.lastrowid
@@ -277,10 +295,12 @@ class IndexStore:
             conditions.append("device_slug = ?")
             params.append(device_slug)
         if keyword:
-            # Tìm kiếm thông minh: path OR vendor OR model OR summary
-            kw = f"%{keyword}%"
-            conditions.append("(path LIKE ? OR vendor LIKE ? OR model LIKE ? OR summary LIKE ?)")
-            params.extend([kw, kw, kw, kw])
+            import unidecode
+            # Tìm kiếm thông minh qua search_text không dấu
+            keyword_unaccented = unidecode.unidecode(keyword.lower())
+            kw = f"%{keyword_unaccented}%"
+            conditions.append("(search_text LIKE ? OR path LIKE ? OR vendor LIKE ? OR model LIKE ? OR summary LIKE ?)")
+            params.extend([kw, f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
         if confirmed_only:
             conditions.append("confirmed = 1")
 

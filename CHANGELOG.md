@@ -1,6 +1,13 @@
 # Changelog
 
-## [2.3.2] - 2026-02-22
+## [2.4.0] - 2026-02-22
+### Added
+- **Smart Search (`/find`)**: Implemented an intelligent parser `app/search.py` that identifies Vietnamese `doc_type` keywords (e.g. "cấu hình", "hợp đồng") explicitly from user queries, coupled with a seamless Telegram `/find` integration.
+- **Direct File Downloads (`/send`)**: Users can now directly download physical documents via Telegram Inline Keyboards automatically attached under search results. Included a 50MB fallback for Telegram's file limit.
+- **Unaccented Vietnamese Search**: Upgraded the `IndexStore` database to maintain a `search_text` column containing lowered, unaccented document information (via `unidecode`). This guarantees robust search hit-rates regardless of tone marks (e.g. "den mo", "ban mo", "xquang").
+
+### Fixed
+- **OpenClaw Token Conflict**: Documented and guided the isolation of the `openclaw` daemon's Telegram bot token to resolve cross-application message stealing conflicts.## [2.3.2] - 2026-02-22
 ### Fixed
 - **Robust JSON Parsing**: Upgraded `classifier.py` to use `json.JSONDecoder().raw_decode()` to extract valid JSON even when OpenRouter or proxy models append trailing garbage characters (e.g. `Server-Sent Events` data or `data: [DONE]`).
 - **Duplicate Event Suppression**: Refactored `process_event.py` to perform an early `store.get_file(file_path)` check. This permanently fixes the infinite feedback loop where `watcher.py` would catch its own subfolder `move` events and double-process already categorized files, resulting in false-positive duplicate error messages to Telegram.

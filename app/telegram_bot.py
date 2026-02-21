@@ -15,9 +15,9 @@ from typing import Any
 from pathlib import Path
 from dotenv import load_dotenv
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, __version__ as tg_ver
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 
 from app.index_store import IndexStore
 
@@ -100,24 +100,33 @@ async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Đang tìm kiếm: \"{keyword}\"...")
 
     try:
-        results = await store.search(keyword=keyword, limit=5)
+        from app.search import execute_smart_search
+        results = await execute_smart_search(store, keyword, limit=5)
         
         if not results:
             await update.message.reply_text(f"❌ Không tìm thấy tài liệu nào khớp với \"{keyword}\".")
             return
 
+        keyboard = []
         msg = f"🔎 <b>Kết quả cho \"{keyword}\":</b>\n\n"
         for idx, file in enumerate(results, 1):
-            name = Path(file['path']).name
-            file_path = file['path']
-            doc_type = file.get('doc_type', 'Khác')
-            vendor = file.get('vendor') or ""
+            file_path_str = str(file['path'])
+            name = str(Path(file_path_str).name)
+            file_path = file_path_str
+            doc_type = str(file.get('doc_type', 'Khác'))
+            vendor = str(file.get('vendor') or "")
+            file_id = file.get('id')
             
             msg += f"{idx}. <b>{name}</b>\n"
             msg += f"   🏷 {doc_type} | {vendor}\n"
             msg += f"   📂 <code>{file_path}</code>\n\n"
             
-        await update.message.reply_html(msg)
+            # Thêm nút bấm tải file
+            if file_id:
+                keyboard.append([InlineKeyboardButton(f"📥 Tải file #{idx} ({name[:20]}...)", callback_data=f"send_{file_id}")])
+            
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+        await update.message.reply_html(msg, reply_markup=reply_markup)
 
     except Exception as e:
         logger.error(f"Lỗi lệnh /find: {e}")
@@ -125,6 +134,7 @@ async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Báo cáo trạng thái hệ thống."""
+    # (Giữ nguyên logic status cũ nhưng sửa lỗi nếu hàm bị lỗi)
     store: IndexStore | None = context.bot_data.get("store")
     if not store:
         await update.message.reply_text("🔴 Lỗi kết nối Database.", parse_mode=ParseMode.MARKDOWN)
@@ -133,7 +143,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         stats = await store.stats()
         count = stats.get("total_files", 0)
-        model_name = config.get('services', {}).get('9router', {}).get('model', 'Unknown')
+        # Sửa lỗi lấy config vì struct của config có thể khác
+        model_name = config.get('services', {}).get('9router', {}).get('model', 'Unknown') if config else 'Unknown'
         
         msg = (
             f"🟢 **Hệ thống đang hoạt động**\n"
@@ -145,6 +156,84 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = f"🔴 Lỗi lấy trạng thái: {e}"
         
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+async def _send_file_to_user(bot, chat_id, store, file_id: int):
+    """Logic cốt lõi gửi file."""
+    if not store or not store._conn:
+        await bot.send_message(chat_id=chat_id, text="❌ Lỗi: Database chưa kết nối.")
+        return
+
+    # Lấy thông tin file từ DB
+    async with store._conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)) as cursor:
+        row = await cursor.fetchone()
+        
+    if not row:
+        await bot.send_message(chat_id=chat_id, text=f"❌ Không tìm thấy file có ID={file_id} trong máy chủ.")
+        return
+
+    file_info = dict(row)
+    file_path = str(file_info.get("path") or "")
+    
+    if not file_path or not os.path.exists(file_path):
+        await bot.send_message(chat_id=chat_id, text=f"❌ File vật lý không còn tồn tại trên máy chủ:\n<code>{file_path}</code>", parse_mode=ParseMode.HTML)
+        return
+        
+    db_size = file_info.get("size_bytes")
+    try:
+        size_bytes = int(db_size) if db_size else os.path.getsize(file_path)
+    except (ValueError, TypeError, OSError):
+        size_bytes = 0
+    
+    # Giới hạn Telegram Bot là 50MB
+    if size_bytes > 50 * 1024 * 1024:
+        size_mb = size_bytes / (1024 * 1024)
+        msg_err = (
+            f"❌ <b>Tệp quá lớn ({size_mb:.1f} MB)!</b>\n\n"
+            f"Telegram giới hạn bot chỉ gửi được tệp <50MB. Vui lòng truy cập thư mục trực tiếp:\n"
+            f"📂 <code>{file_path}</code>"
+        )
+        await bot.send_message(chat_id=chat_id, text=msg_err, parse_mode=ParseMode.HTML)
+        return
+
+    # Gửi file
+    msg = await bot.send_message(chat_id=chat_id, text=f"⏳ Đang tải tệp <b>{Path(file_path).name}</b>...", parse_mode=ParseMode.HTML)
+    try:
+        with open(file_path, "rb") as doc:
+            await bot.send_document(chat_id=chat_id, document=doc, caption=f"📄 {Path(file_path).name}")
+        await msg.delete() # Xóa tin nhắn "Đang tải"
+    except Exception as e:
+        logger.error(f"Lỗi gửi file: {e}")
+        await bot.edit_message_text(chat_id=chat_id, message_id=msg.message_id, text=f"❌ Có lỗi xảy ra khi tải file: {e}")
+
+async def send_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gửi file trực tiếp bằng lệnh /send <ID>"""
+    if not context.args:
+        await update.message.reply_text("💡 Cách dùng: <code>/send &lt;ID_File&gt;</code>\nSử dụng /find để lấy ID hoặc bấm nút Tải file.", parse_mode=ParseMode.HTML)
+        return
+
+    try:
+        file_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ ID tệp phải là một số nguyên.")
+        return
+
+    store: IndexStore | None = context.bot_data.get("store")
+    await _send_file_to_user(context.bot, update.effective_chat.id, store, file_id)
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xử lý sự kiện click vào nút Inline Keyboard"""
+    query = update.callback_query
+    await query.answer() # Báo cho Telegram biết là đã nhận được click
+    
+    data = query.data
+    if data.startswith("send_"):
+        try:
+            file_id = int(data.split("_")[1])
+            store: IndexStore | None = context.bot_data.get("store")
+            await _send_file_to_user(context.bot, update.effective_chat.id, store, file_id)
+        except Exception as e:
+            logger.error(f"Lỗi Callback send_: {e}")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Dữ liệu nút hỏng.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xử lý tin nhắn văn bản (tự động tìm kiếm)."""
@@ -183,8 +272,12 @@ async def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("latest", latest))
     app.add_handler(CommandHandler("find", find))
+    app.add_handler(CommandHandler("send", send_file_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("healthcheck", status_command)) # Alias
+    
+    # Callback Handlers (Inline Keyboard)
+    app.add_handler(CallbackQueryHandler(button_callback))
     
     # Message Handler (Non-command)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
