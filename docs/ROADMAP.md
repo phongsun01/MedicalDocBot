@@ -59,7 +59,7 @@ Chưa cần OCR, Paperless, hay semantic search.
 
 ---
 
-## Phase 1 — MVP *(Hoàn thành Core)*
+## Phase 1 — MVP *(Hoàn thành)*
 
 **Mục tiêu**: Hoàn thành 3 UC P0 — **(UC1) thêm file → classify → wiki update**, **(UC2) tìm kiếm**, **(UC3) gửi file**.
 Chưa cần Paperless.
@@ -176,7 +176,7 @@ Chưa cần Paperless.
 | D1a | Watcher không spam, debounce 3s | 0 | 🔲 |
 | D1b | Kreuzberg extract + preview qua bot | 0 | 🔲 |
 | D2 | UC1: drop file → confirm → wiki update tự động | 1 | 🔲 |
-| D3a | UC2: search basic + top 3 kết quả | 1 | 🔲 |
-| D3b | UC3: gửi file đúng qua Telegram | 1 | 🔲 |
+| D3a | UC2: search basic + top 3 kết quả | 1 | ✅ |
+| D3b | UC3: gửi file đúng qua Telegram | 1 | ✅ |
 | D4 | Paperless chạy ổn + OCR + API query/highlights | 2 | 🔲 |
 | D5 | Hybrid search + compare/stats/voice | 2 | 🔲 |

@@ -236,9 +236,9 @@ updated_at: "{{updated_at}}"
 | **Perf** | Search < 3s |
 
 **Test cases**:
-- [ ] UC2: `/find cấu hình chào giá XQuang GE` → ≥ 1 kết quả đúng
-- [ ] UC3: `/send hop_dong mới nhất <slug>` → đúng file mới nhất
-- [ ] Query không có kết quả → bot trả "Không tìm thấy, thử từ khác?"
+- [x] UC2: `/find cấu hình chào giá XQuang GE` → ≥ 1 kết quả đúng
+- [x] UC3: `/send hop_dong mới nhất <slug>` → đúng file mới nhất
+- [x] Query không có kết quả → bot trả "Không tìm thấy, thử từ khác?"
 
 ---
 
