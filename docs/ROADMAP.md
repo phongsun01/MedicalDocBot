@@ -67,9 +67,11 @@ Chưa cần Paperless.
 ### 1.1 Auto-classify + confirm flow *(✅ Hoàn thành — v2.5.0)*
 
 - `classifier.py`: AI via 9router local gateway → confidence score (0.0–1.0) từ model
-- **Mọi file** (kể cả confidence cao) → lưu DRAFT `confirmed=False` → bot gửi message với nút **✅ Phê duyệt** / **✏️ Chỉnh sửa**
-- Sau người dùng bấm approve: file mới được di chuyển + wiki mới được cập nhật  
-- Các bug quan trọng đã fix: Telegram HTML mode, `doc_type` multi-filter search, encapsulation `get_file_by_id`, rate-limit configurable
+- **Mọi file** (kể cả confidence cao) → lưu DRAFT `confirmed=False` →- [x] **Milestone 2.0 (v2.5.1/v2.6.0)**: UC1 Confirmation Flow — *Hoàn thành*
+  - [x] Chặn file rác (whitelist)
+  - [x] Encapsulation DB
+  - [x] Tự động di chuyển file khi Phê duyệt
+  - [x] Tự động cập nhật Wiki Obsidian ngay lập tứcrọng đã fix: Telegram HTML mode, `doc_type` multi-filter search, encapsulation `get_file_by_id`, rate-limit configurable
 
 **Deliverable**: Thêm 1 file → bot hỏi với nút → bấm Phê duyệt → nhãn lưu + wiki cập nhật. ✅
 

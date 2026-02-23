@@ -196,9 +196,13 @@ updated_at: "{{updated_at}}"
 | {{entry.date}} | {{entry.name}} | {{entry.doc_type}} |
 {% endfor %}
 <!-- AUTO-GENERATED: END -->
-```
 
 **Test cases**:
+### 1. Phân loại & Lưu trữ (UC1)
+- [x] Tự động nhận diện metadata (Vendor, Model, Category) qua AI.
+- [x] Phê duyệt (Confirm) qua Telegram Bot.
+- [x] Tự động di chuyển file vật lý vào thư mục Taxonomy chuẩn.
+- [x] Tự động đồng bộ Wiki Obsidian (Device page + Global Index) ngay khi duyệt tài liệu.
 - [ ] Chạy `wiki_generator.py` 2 lần → không có dòng duplicate
 - [ ] Thêm 1 file mới → section đúng doc_type được cập nhật
 - [ ] `wiki/index_categories.md` liệt kê đủ 25 categories

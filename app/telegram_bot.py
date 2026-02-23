@@ -371,8 +371,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             wiki.generate_indexes(taxonomy)
 
             import html
-            msg = f"✅ Đã phê duyệt và xử lý xong:\n📁 <code>{html.escape(str(target_relative))}</code>"
-            await query.edit_message_text(msg, parse_mode=ParseMode.HTML)
+            import datetime
+            now_str = datetime.datetime.now().strftime("%H:%M:%S")
+            msg = f"✅ Đã phê duyệt và xử lý xong ({now_str}):\n📁 <code>{html.escape(str(target_relative))}</code>"
+            try:
+                await query.edit_message_text(msg, parse_mode=ParseMode.HTML)
+            except Exception as tg_err:
+                if "Message is not modified" not in str(tg_err):
+                    raise tg_err
 
         except Exception as e:
             logger.error(f"Lỗi khi xử lý approve: {e}")

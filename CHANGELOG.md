@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.1] - 2026-02-24
+
+### Fixed
+- **Telegram UI Robustness**: Wrapped `edit_message_text` in a try-except block and added a high-resolution timestamp to approval messages to prevent "Message is not modified" errors from the Telegram API when multiple actions target the same document.
+
+---
+
 ## [2.6.0] - 2026-02-23
 
 ### Added
