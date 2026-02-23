@@ -1,32 +1,35 @@
 #!/bin/bash
 # start.sh - Khởi động MedicalDocBot (Watcher & Telegram Bot)
+# Phải chạy từ thư mục gốc của project: bash start.sh
 
-# Load biến môi trường nếu cần
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Kích hoạt venv
 source .venv/bin/activate
-export PYTHONPATH=$PYTHONPATH:.
+export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
+
+# Load biến môi trường
+if [[ -f ".env" ]]; then
+    set -a; source .env; set +a
+fi
 
 # Tạo thư mục logs nếu chưa có
 mkdir -p logs
 
 echo "🚀 Đang khởi động MedicalDocBot..."
 
-# Kiểm tra xem bot có đang chạy không
-if pgrep -f "app/watcher.py" > /dev/null; then
-    echo "⚠️  Watcher đang chạy. Đang khởi động lại..."
-    pkill -f "app/watcher.py"
-fi
+# Dừng nếu đang chạy
+pkill -f "app.watcher" 2>/dev/null && echo "⚠️  Watcher cũ đã dừng."
+pkill -f "app.telegram_bot" 2>/dev/null && echo "⚠️  Bot cũ đã dừng."
+sleep 1
 
-if pgrep -f "app/telegram_bot.py" > /dev/null; then
-    echo "⚠️  Telegram Bot đang chạy. Đang khởi động lại..."
-    pkill -f "app/telegram_bot.py"
-fi
-
-# Chạy Watcher
-nohup python app/watcher.py > logs/watcher.log 2>&1 &
+# Chạy Watcher (dùng -m để Python giải quyết import app.* đúng)
+nohup python -m app.watcher config.yaml > logs/watcher.log 2>&1 &
 echo "✅ Watcher đã khởi động (PID: $!)"
 
 # Chạy Telegram Bot
-nohup python app/telegram_bot.py > logs/bot.log 2>&1 &
+nohup python -m app.telegram_bot > logs/bot.log 2>&1 &
 echo "✅ Telegram Bot đã khởi động (PID: $!)"
 
-echo "📜 Logs đang được ghi vào thư mục logs/."
+echo "📜 Logs: logs/watcher.log | logs/bot.log"

@@ -50,17 +50,17 @@ File mới → watcher.py
 
 | Component | File | Phase | Mô tả |
 |-----------|------|-------|--------|
-| Taxonomy | `app/taxonomy.py` | 1 | Parse 25 categories YAML |
+| Taxonomy | `app/taxonomy.py` | 1 | Parse 25 categories Pydantic |
 | Slug | `app/slug.py` | 1 | Validate + normalize slug |
 | Index | `app/index_store.py` | 1 | SQLite async store |
 | Watcher | `app/watcher.py` | 1 | watchdog + debounce |
 | Wiki | `app/wiki_generator.py` | 1 | Jinja2 → Markdown |
-| Classifier | `app/classifier.py` | 2 | openClaw + rule fallback |
-| Extractor | `app/extractor_kreuzberg.py` | 2 | kreuzberg Python |
-| Search | `app/search.py` | 2 | Paperless + SQLite |
-| Bot | `app/telegram_bot.py` | 2 | python-telegram-bot |
-| openClaw | `app/openclaw_client.py" | 2 | HTTP client Node.js gateway |
-| Paperless | `app/paperless_client.py" | 2 | REST client OCR/DMS |
+| Classifier | `app/classifier.py` | 2 | Gemini AI / openClaw |
+| Extractor | `kreuzberg` | 2 | Thư viện pip (không cần file riêng) |
+| Search | `app/search.py` | 2 | SQLite fulltext |
+| Bot | `app/telegram_bot.py` | 2 | python-telegram-bot + inline buttons |
+| Process | `app/process_event.py` | 2 | Điều phối luồng và xác nhận |
+
 
 ## Constraints
 

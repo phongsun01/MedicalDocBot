@@ -9,10 +9,10 @@ Daemon không crash khi lỗi đơn lẻ.
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 import logging
 import os
-import re
 import signal
 import sys
 import time
@@ -104,9 +104,8 @@ class MedicalFileHandler(FileSystemEventHandler):
         event_queue: asyncio.Queue,
         loop: asyncio.AbstractEventLoop,
     ) -> None:
-        super().__init__()
         self._root = root_path
-        self._ignore_patterns = [re.compile(p.replace("*", ".*")) for p in ignore_patterns]
+        self._ignore_patterns = ignore_patterns
         self._allowed_extensions = {ext.lower() for ext in allowed_extensions}
         self._min_size = min_size_bytes
         self._queue = event_queue
@@ -116,12 +115,13 @@ class MedicalFileHandler(FileSystemEventHandler):
         """Kiểm tra file có nên bỏ qua không."""
         p = Path(path)
         name = p.name
-        # Kiểm tra ignore patterns
+        # Kiểm tra ignore patterns bằng fnmatch
         for pattern in self._ignore_patterns:
-            if pattern.match(name):
+            if fnmatch.fnmatch(name, pattern):
                 return True
         # Kiểm tra whitelist extension
         if p.suffix.lower() not in self._allowed_extensions:
+            logger.info(f"🔬 DEBUG WATCHER: {p.suffix.lower()} not in whitelist")
             return True
             
         # Kiểm tra whitelist path
@@ -142,10 +142,16 @@ class MedicalFileHandler(FileSystemEventHandler):
 
     def _enqueue(self, event_type: str, path: str) -> None:
         """Đưa event vào async queue (thread-safe)."""
+        logger.info(f"🔎 DEBUG WATCHER: Caught {event_type} on {path}")
+        
         if self._should_ignore(path):
+            logger.info(f"🚫 DEBUG WATCHER: Ignored by _should_ignore: {path}")
             return
         if event_type in ("created", "modified") and not self._is_valid_file(path):
+            logger.info(f"🚫 DEBUG WATCHER: Invalid file size or not found: {path} (size >={self._min_size} required)")
             return
+
+        logger.info(f"✅ DEBUG WATCHER: Enqueued {path}")
 
         event = {
             "event": event_type,

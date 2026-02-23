@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.6.0] - 2026-02-23
+
+### Added
+- **UC1 Full Confirmation Flow**: Clicking "✅ Phê duyệt" on Telegram now physically moves the file from the root directory into the appropriate taxonomy-based folder structure (e.g., `Category/Group/Device/filename.pdf`).
+- **Real-time Wiki Sync**: Approved files now trigger an immediate run of `WikiGenerator` to update the specific Device Wiki page and rebuild the global `00_Index.md` in Obsidian.
+- **Enhanced Watcher Logging**: Added debug logs within the watcher pipeline to track ignored files and valid event enqueuing for easier troubleshooting.
+
+### Fixed
+- **Regex Filter False Positives**: Replaced imprecise regex logic in `watcher.py` with `fnmatch` to prevent clinical document filenames containing "Catalog" from being erroneously blocked by the `*.log` filter.
+
+---
+
 ## [2.5.1] - 2026-02-23
 
 ### Fixed

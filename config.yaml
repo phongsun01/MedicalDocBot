@@ -149,7 +149,7 @@ services:
   9router:
     enabled: true
     # Model sử dụng cho phân loại và trích xuất
-    model: "if/glm-4.7"
+    model: "openrouter/auto"
     # Địa chỉ local port do pm2 / docker cung cấp
     base_url: "http://localhost:20128/v1"
     # Timeout HTTP request (giây)

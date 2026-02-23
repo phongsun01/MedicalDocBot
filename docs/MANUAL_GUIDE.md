@@ -1,41 +1,30 @@
-# Hướng dẫn Xử lý Thủ công & Feedback Loop
+# Hướng dẫn copy file trực tiếp (Manual Copy) 📂
 
-Mặc dù Gemini AI có độ chính xác cao, đôi khi vẫn có sai sót. Đây là quy trình xử lý chuẩn.
+Ngoài việc thả file vào thư mục gốc để Bot tự phân loại, bạn có thể copy file **thẳng vào thư mục thiết bị** nếu đã biết rõ nó thuộc về đâu. Bot sẽ tự động nhận diện và cập nhật Wiki mà không cần hỏi lại bạn trên Telegram.
 
-## 1. Khi AI phân loại sai (Wrong Classification)
+## 1. Cấu trúc thư mục chuẩn
+Để Bot có thể nhận diện tự động, bạn cần copy file vào đúng cấp độ thư mục thứ 4 (Doc Type folder).
 
-**Tình huống**: File là "Báo giá" nhưng AI nhận diện là "Kỹ thuật".
+Cấu trúc: `MedicalDevices / [Danh mục] / [Nhóm] / [Thiết bị] / [Loại tài liệu] / file.pdf`
 
-### Cách 1: Sửa thủ công (Nhanh nhất)
-1.  **Di chuyển file**: Kéo file từ folder sai sang folder đúng trong `~/MedicalDevices`.
-    -   VD: Từ `Tim mach/Ky thuat/` sang `Tim mach/Bao gia/`.
-2.  **Watcher tự động**: Hệ thống sẽ phát hiện file bị di chuyển -> Cập nhật lại Database & Wiki.
+Ví dụ: 
+`MedicalDevices/chan_doan_hinh_anh/x_quang/ge_optima_xr220/tech/manual_user.pdf`
 
-### Cách 2: Feedback để AI học (Cải thiện lâu dài)
-1.  **Gửi file cho Admin (Dev)**: Gửi file `logs/classifier.log` để Dev xem tại sao sai.
-2.  **Điều chỉnh Prompt**: Dev sẽ thêm "keyword" đặc thù của file đó vào `classifier.py` hoặc `config.yaml` để lần sau không sai nữa.
+## 2. Các thư mục loại tài liệu (Doc Type) được hỗ trợ:
+Bạn phải copy vào một trong các thư mục con sau của thiết bị:
+- `tech/`: Tài liệu kỹ thuật (`ky_thuat`)
+- `config/`: Cấu hình (`cau_hinh`)
+- `price/`: Báo giá (`bao_gia`)
+- `contracts/`: Hợp đồng (`hop_dong`)
+- `compare/`: So sánh (`so_sanh`)
+- `info/`: Thông tin chung (`thong_tin`)
+- `links/`: Liên kết (`lien_ket`)
+- `other/`: Khác (`khac`)
 
-## 2. Khi AI không tìm thấy thiết bị (Unknown Model)
+## 3. Lợi ích khi copy trực tiếp:
+- **Tốc độ**: Bot sẽ bỏ qua bước gọi AI (Gemini) để phân loại.
+- **Tiết kiệm**: Không tốn token/hạn ngạch API.
+- **Tự động**: Bot sẽ coi như dữ liệu đã "Phê duyệt" (Confirmed) và cập nhật ngay vào database cũng như Wiki Obsidian của bạn.
 
-**Tình huống**: File thuộc model mới chưa có trong file `data/taxonomy.yaml`.
-
-### Quy trình:
-1.  **Cập nhật Taxonomy**:
-    -   Mở file `data/taxonomy.yaml`.
-    -   Thêm một mục mới vào dưới nhóm tương ứng.
-    ```yaml
-     - slug: "model_moi"
-       label_vi: "Model Mới ABCD"
-       vendor: "Hãng X"
-    ```
-2.  **Chạy lại xử lý**:
-    -   Kéo file ra ngoài rồi thả lại vào folder `~/MedicalDevices`.
-    -   Hệ thống sẽ quét lại và nhận diện đúng model mới.
-
-## 3. Cách đưa trang Index lên đầu
-
-**Obsidian / File Explorer**:
--   Theo mặc định, máy tính sắp xếp theo tên (Alphabet).
--   Để Index luôn ở đầu, tôi đã đặt tên là `00_Danh_muc_thiet_bi.md` (số 00 giúp nó luôn đứng top).
--   Trong các thư mục con, file `Index.md` có thể bị trôi.
--   **Mẹo**: Đổi tên thành `!Index.md` hoặc `_Index.md` nếu bạn muốn nó nổi bật hơn nữa.
+---
+*Lưu ý: Nếu bạn copy vào thư mục gốc hoặc các thư mục không đúng cấu trúc 5 cấp, Bot vẫn sẽ gọi AI để hỗ trợ bạn phân loại như bình thường.*

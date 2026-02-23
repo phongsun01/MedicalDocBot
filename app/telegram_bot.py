@@ -364,10 +364,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "category_slug": f"{category_slug}/{group_slug}",
             }
             all_files = await store.search(device_slug=device_slug)
+            
+            # Cập nhật file markdown riêng cho device
             wiki.update_device_wiki(device_slug, device_info, all_files, taxonomy=taxonomy)
+            # Cập nhật lại toàn bộ các file Index.md (do có thư mục/device mới)
+            wiki.generate_indexes(taxonomy)
 
-            msg = f"✅ Đã phê duyệt và xử lý xong:\n📁 `{target_relative}`"
-            await query.edit_message_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
+            import html
+            msg = f"✅ Đã phê duyệt và xử lý xong:\n📁 <code>{html.escape(str(target_relative))}</code>"
+            await query.edit_message_text(msg, parse_mode=ParseMode.HTML)
 
         except Exception as e:
             logger.error(f"Lỗi khi xử lý approve: {e}")

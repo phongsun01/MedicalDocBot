@@ -78,12 +78,12 @@ mkdir_safe "tim_mach_can_thiep/may_tao_nhip"
 mkdir_safe "tim_mach_can_thiep/dien_sinh_ly"
 
 # 10. Phẫu thuật – phòng mổ
-mkdir_safe "phau_thuat_phong_mo/ban_mo"
-mkdir_safe "phau_thuat_phong_mo/den_mo"
-mkdir_safe "phau_thuat_phong_mo/dao_mo_dien"
-mkdir_safe "phau_thuat_phong_mo/dao_sieu_am"
-mkdir_safe "phau_thuat_phong_mo/he_thong_treo_tran"
-mkdir_safe "phau_thuat_phong_mo/tourniquet"
+mkdir_safe "thiet_bi_phong_mo/ban_mo"
+mkdir_safe "thiet_bi_phong_mo/den_mo"
+mkdir_safe "thiet_bi_phong_mo/dao_mo_dien"
+mkdir_safe "thiet_bi_phong_mo/dao_sieu_am"
+mkdir_safe "thiet_bi_phong_mo/he_thong_treo_tran"
+mkdir_safe "thiet_bi_phong_mo/tourniquet"
 
 # 11. Sản – Nhi
 mkdir_safe "san_nhi/may_sieu_am_san"
