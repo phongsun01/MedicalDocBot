@@ -393,21 +393,18 @@ class IndexStore:
             conditions.append("confirmed = 1")
 
         # Validate order_by to prevent SQL injection
-        allowed_sort_columns = {
-            "path",
-            "sha256",
-            "doc_type",
-            "device_slug",
-            "category_slug",
-            "updated_at",
-            "created_at",
-            "indexed_at",
-            "vendor",
-            "model",
-            "size_bytes",
+        # Reconstruct from whitelist — never pass raw user string to SQL
+        _ALLOWED_COLUMNS = {
+            "path", "sha256", "doc_type", "device_slug", "category_slug",
+            "updated_at", "created_at", "indexed_at", "vendor", "model", "size_bytes",
         }
+        _ALLOWED_DIRECTIONS = {"asc", "desc"}
         order_parts = order_by.lower().split()
-        if not order_parts or order_parts[0] not in allowed_sort_columns:
+        if len(order_parts) >= 1 and order_parts[0] in _ALLOWED_COLUMNS:
+            col = order_parts[0]
+            direction = order_parts[1] if len(order_parts) >= 2 and order_parts[1] in _ALLOWED_DIRECTIONS else "asc"
+            order_by = f"{col} {direction.upper()}"
+        else:
             order_by = "updated_at DESC"
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""

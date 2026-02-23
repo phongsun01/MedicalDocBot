@@ -46,7 +46,7 @@ def parse_search_query(raw_query: str) -> tuple[list[str], str | None]:
                 detected_doc_types.append(dt)
             # Xóa keyword khỏi chuỗi để nhường chỗ cho model/vendor
             # Dùng regex cẩn thận cho chuỗi Unicode tiếng Việt để tránh xóa một phần chữ
-            pattern = re.compile(r"(^|\s)" + re.escape(kw) + r"(?=\s|$)", flags=re.IGNORECASE)
+            pattern = re.compile(r"(^|\s)" + re.escape(kw) + r"(?=\s|$|\W)", flags=re.IGNORECASE)
             remaining_keyword = pattern.sub(" ", remaining_keyword).strip()
             # Xử lý whitespace thừa
             remaining_keyword = re.sub(r"\s+", " ", remaining_keyword)
