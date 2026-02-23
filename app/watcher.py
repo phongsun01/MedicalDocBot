@@ -16,8 +16,7 @@ import re
 import signal
 import sys
 import time
-from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,12 +24,13 @@ import yaml
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-# Import logic xử lý từ process_event.py
-from app.process_event import process_new_file
 from app.classifier import MedicalClassifier
 from app.index_store import IndexStore
-from app.wiki_generator import WikiGenerator
+
+# Import logic xử lý từ process_event.py
+from app.process_event import process_new_file
 from app.taxonomy import Taxonomy
+from app.wiki_generator import WikiGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def _expand_path(path_str: str) -> Path:
 
 def _now_iso() -> str:
     """Timestamp ISO 8601 UTC."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class EventDebouncer:
@@ -80,9 +80,7 @@ class EventDebouncer:
         ready = []
         async with self._lock:
             expired_keys = [
-                path
-                for path, (_, ts) in self._pending.items()
-                if now - ts >= self._debounce
+                path for path, (_, ts) in self._pending.items() if now - ts >= self._debounce
             ]
             for path in expired_keys:
                 event_type, _ = self._pending.pop(path)
@@ -190,7 +188,7 @@ class MedicalWatcher:
         self._event_queue: asyncio.Queue = asyncio.Queue()
         self._debouncer = EventDebouncer(self._debounce)
         self._running = False
-        
+
         # Services
         self._classifier = None
         self._store = None
@@ -246,18 +244,19 @@ class MedicalWatcher:
                 Path(event["path"]).name,
                 event.get("size_bytes", 0),
             )
-            
+
             # Gọi logic xử lý Phase 1.0 (Classify -> Move -> DB -> Wiki -> Notify)
-            if event["event"] in ("created", "moved"):
+            # Lưu ý macOS: cp/copy file thường tạo sự kiện 'modified' thay vì 'created'
+            if event["event"] in ("created", "modified", "moved"):
                 await process_new_file(
                     event["path"],
                     self._config,
                     self._classifier,
                     self._store,
                     self._wiki,
-                    self._taxonomy
+                    self._taxonomy,
                 )
-                
+
         except Exception as e:
             # Không crash daemon
             logger.error("Lỗi xử lý event %s: %s", event.get("path"), e)
@@ -271,7 +270,7 @@ class MedicalWatcher:
                     event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
                     await self._debouncer.add(event["event"], event["path"])
                     # Cập nhật size/ts từ event gốc
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
 
                 # Flush events đã qua debounce window

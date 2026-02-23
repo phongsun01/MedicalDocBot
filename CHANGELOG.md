@@ -1,6 +1,26 @@
 # Changelog
 
+## [2.5.0] - 2026-02-23
+
+### Added
+- **Confirm Flow (UC1)**: All newly detected documents are now stored as DRAFT (`confirmed=False`) and presented to users on Telegram with **✅ Phê duyệt** / **✏️ Chỉnh sửa** buttons. Files are only moved and wiki is only updated after explicit user approval. This aligns with the UC1 spec.
+- **Multi doc_type Search**: `search.py` now extracts all doc_type keywords from a query (e.g. "cấu hình hợp đồng GE" → filters both `cau_hinh` AND `hop_dong`), eliminating the single-match `break` bug.
+- **`get_file_by_id` on IndexStore**: Added a proper public method to retrieve file records by ID, eliminating direct `_conn` access from `telegram_bot.py`.
+- **New Unit Tests**: Added `tests/test_search.py` (4 cases for query parsing) and `tests/test_classifier.py` (mocked API call) — total test suite is now 16 tests, all passing.
+
+### Fixed
+- **`IndexStore.search()` ignored `doc_type`**: The filter condition for `doc_type` was never appended to `conditions`. Now supports both `str` and `list[str]` (uses `IN (...)`).
+- **Telegram 400 Bad Request (MarkdownV2)**: Switched all `sendMessage` calls from `MARKDOWN_V2` to `HTML` mode and used `html.escape()` for all dynamic content. Eliminates errors from `(`, `)`, `.`, `!` in vendor/summary text.
+- **`handle_message()` group spam**: Auto-search on non-command messages is now restricted to private chats only. Group chat messages no longer trigger search results.
+- **`classifier.py` outdated docstring**: Updated module docstring from "Gemini Generative AI" to "9router local gateway".
+- **Rate limiting hardcoded to 6s**: Rate limit delay now reads from `config['services']['9router']['rate_limit_seconds']` (default: 6.0). Configurable without touching code.
+- **`search_text` backfill blocks startup**: Moved the per-row UPDATE loop in `IndexStore.init()` to an `asyncio.create_task(_backfill())` background coroutine using `executemany`. Startup is no longer blocked on large databases.
+- **`start()` mixing Markdown in HTML reply**: Removed `**bold**` Markdown syntax from `reply_html()` in favor of proper `<b>` HTML tags.
+
+---
+
 ## [2.4.0] - 2026-02-22
+
 ### Added
 - **Smart Search (`/find`)**: Implemented an intelligent parser `app/search.py` that identifies Vietnamese `doc_type` keywords (e.g. "cấu hình", "hợp đồng") explicitly from user queries, coupled with a seamless Telegram `/find` integration.
 - **Direct File Downloads (`/send`)**: Users can now directly download physical documents via Telegram Inline Keyboards automatically attached under search results. Included a 50MB fallback for Telegram's file limit.

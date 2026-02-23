@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from app.utils import compute_sha256
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,7 @@ CREATE TABLE IF NOT EXISTS events (
 
 def _now_iso() -> str:
     """Trả về timestamp ISO 8601 UTC hiện tại."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # compute_sha256 moved to app.utils
@@ -89,13 +88,13 @@ class IndexStore:
         if not self._conn:
             self._conn = await aiosqlite.connect(self._db_path)
             self._conn.row_factory = aiosqlite.Row
-            
+
         await self._conn.executescript(_SCHEMA_SQL)
-        
+
         # Migration: Kiểm tra và thêm cột mới nếu thiếu (cho DB cũ)
         async with self._conn.execute("PRAGMA table_info(files)") as cursor:
             columns = [row[1] for row in await cursor.fetchall()]
-            
+
         if "vendor" not in columns:
             logger.info("⚡️ Migrating DB: Adding column 'vendor'")
             await self._conn.execute("ALTER TABLE files ADD COLUMN vendor TEXT")
@@ -108,20 +107,40 @@ class IndexStore:
         if "search_text" not in columns:
             logger.info("⚡️ Migrating DB: Adding column 'search_text'")
             await self._conn.execute("ALTER TABLE files ADD COLUMN search_text TEXT")
-            
+
         # Tạo index cho cột mới sau khi chắc chắn cột đã tồn tại
         await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_vendor ON files(vendor)")
         await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_model ON files(model)")
-        
+
         # Cập nhật dữ liệu search_text cho các file cũ
         import unidecode
-        async with self._conn.execute("SELECT id, path, vendor, model, summary FROM files WHERE search_text IS NULL") as cursor:
-            old_rows = await cursor.fetchall()
-            for row in old_rows:
-                search_data = f"{row[1]} {row[2] or ''} {row[3] or ''} {row[4] or ''}".lower()
-                search_text = unidecode.unidecode(search_data)
-                await self._conn.execute("UPDATE files SET search_text = ? WHERE id = ?", (search_text, row[0]))
-        
+
+        async def _backfill():
+            try:
+                async with self._conn.execute(
+                    "SELECT id, path, vendor, model, summary FROM files WHERE search_text IS NULL"
+                ) as cursor:
+                    old_rows = await cursor.fetchall()
+
+                if old_rows:
+                    logger.info("⚡️ Migrating DB: Backfilling search_text for %d files in background...", len(old_rows))
+                    updates = []
+                    for row in old_rows:
+                        search_data = f"{row[1]} {row[2] or ''} {row[3] or ''} {row[4] or ''}".lower()
+                        search_text = unidecode.unidecode(search_data)
+                        updates.append((search_text, row[0]))
+
+                    await self._conn.executemany(
+                        "UPDATE files SET search_text = ? WHERE id = ?", updates
+                    )
+                    await self._conn.commit()
+                    logger.info("✅ Migration: search_text backfill complete.")
+            except Exception as e:
+                logger.error("Lỗi khi backfill search_text: %s", e)
+
+        import asyncio
+        asyncio.create_task(_backfill())
+
         await self._conn.commit()
         logger.info("IndexStore khởi tạo: %s", self._db_path)
 
@@ -181,6 +200,7 @@ class IndexStore:
             existing = await cursor.fetchone()
 
         import unidecode
+
         search_data = f"{path_str} {vendor or ''} {model or ''} {summary or ''} {doc_type}".lower()
         search_text = unidecode.unidecode(search_data)
 
@@ -197,10 +217,18 @@ class IndexStore:
                 WHERE path = ?
                 """,
                 (
-                    sha256, doc_type, device_slug,
-                    category_slug, group_slug,
-                    vendor, model, summary,
-                    size_bytes, int(confirmed), now, now,
+                    sha256,
+                    doc_type,
+                    device_slug,
+                    category_slug,
+                    group_slug,
+                    vendor,
+                    model,
+                    summary,
+                    size_bytes,
+                    int(confirmed),
+                    now,
+                    now,
                     search_text,
                     path_str,
                 ),
@@ -218,10 +246,21 @@ class IndexStore:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    path_str, sha256, doc_type, device_slug,
-                    category_slug, group_slug,
-                    vendor, model, summary,
-                    size_bytes, int(confirmed), now, now, now, search_text,
+                    path_str,
+                    sha256,
+                    doc_type,
+                    device_slug,
+                    category_slug,
+                    group_slug,
+                    vendor,
+                    model,
+                    summary,
+                    size_bytes,
+                    int(confirmed),
+                    now,
+                    now,
+                    now,
+                    search_text,
                 ),
             )
             record_id = cursor.lastrowid
@@ -230,15 +269,16 @@ class IndexStore:
         await self._conn.commit()
 
         return record_id
-    
+
     async def delete_file(self, path: str | Path) -> None:
         """
         Xóa file khỏi index.
-        
+
         Args:
             path: Đường dẫn file cần xóa
         """
-        if not self._conn: await self.init()
+        if not self._conn:
+            await self.init()
         await self._conn.execute("DELETE FROM files WHERE path = ?", (str(path),))
         await self._conn.commit()
         logger.info("Đã xóa file khỏi DB: %s", path)
@@ -253,16 +293,25 @@ class IndexStore:
         Returns:
             Dict thông tin file hoặc None nếu không tìm thấy
         """
-        if not self._conn: await self.init()
-        async with self._conn.execute(
-            "SELECT * FROM files WHERE path = ?", (str(path),)
-        ) as cursor:
+        if not self._conn:
+            await self.init()
+        async with self._conn.execute("SELECT * FROM files WHERE path = ?", (str(path),)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def get_file_by_id(self, file_id: int) -> dict[str, Any] | None:
+        """
+        Lấy thông tin file theo ID.
+        """
+        if not self._conn:
+            await self.init()
+        async with self._conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)) as cursor:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
     async def search(
         self,
-        doc_type: str | None = None,
+        doc_type: str | list[str] | None = None,
         device_slug: str | None = None,
         category_slug: str | None = None,
         keyword: str | None = None,
@@ -294,29 +343,55 @@ class IndexStore:
         if device_slug:
             conditions.append("device_slug = ?")
             params.append(device_slug)
+        if doc_type:
+            if isinstance(doc_type, list):
+                if len(doc_type) > 0:
+                    placeholders = ", ".join(["?"] * len(doc_type))
+                    conditions.append(f"doc_type IN ({placeholders})")
+                    params.extend(doc_type)
+            else:
+                conditions.append("doc_type = ?")
+                params.append(doc_type)
         if keyword:
             import unidecode
+
             # Tìm kiếm thông minh qua search_text không dấu
             keyword_unaccented = unidecode.unidecode(keyword.lower())
             kw = f"%{keyword_unaccented}%"
-            conditions.append("(search_text LIKE ? OR path LIKE ? OR vendor LIKE ? OR model LIKE ? OR summary LIKE ?)")
+            conditions.append(
+                "(search_text LIKE ? OR path LIKE ? OR vendor LIKE ? OR model LIKE ? OR summary LIKE ?)"
+            )
             params.extend([kw, f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
         if confirmed_only:
             conditions.append("confirmed = 1")
 
         # Validate order_by to prevent SQL injection
-        allowed_sort_columns = {"path", "sha256", "doc_type", "device_slug", "category_slug", "updated_at", "created_at", "indexed_at", "vendor", "model", "size_bytes"}
+        allowed_sort_columns = {
+            "path",
+            "sha256",
+            "doc_type",
+            "device_slug",
+            "category_slug",
+            "updated_at",
+            "created_at",
+            "indexed_at",
+            "vendor",
+            "model",
+            "size_bytes",
+        }
         order_parts = order_by.lower().split()
         if not order_parts or order_parts[0] not in allowed_sort_columns:
             order_by = "updated_at DESC"
-        
+
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         sql = f"SELECT * FROM files {where} ORDER BY {order_by} LIMIT ?"
         params.append(limit)
 
-        if not self._conn: await self.init()
-        if not self._conn: return [] # Should not happen after init
-        
+        if not self._conn:
+            await self.init()
+        if not self._conn:
+            return []  # Should not happen after init
+
         async with self._conn.execute(sql, params) as cursor:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
@@ -353,9 +428,11 @@ class IndexStore:
         Returns:
             Dict {doc_type: count}
         """
-        if not self._conn: await self.init()
-        if not self._conn: return {}
-        
+        if not self._conn:
+            await self.init()
+        if not self._conn:
+            return {}
+
         async with self._conn.execute(
             """
             SELECT doc_type, COUNT(*) as cnt
@@ -376,7 +453,8 @@ class IndexStore:
             event_type: Loại event (created, modified, deleted)
             file_path: Đường dẫn file
         """
-        if not self._conn: await self.init()
+        if not self._conn:
+            await self.init()
         await self._conn.execute(
             "INSERT INTO events (event_type, file_path, ts) VALUES (?, ?, ?)",
             (event_type, file_path, _now_iso()),
@@ -390,7 +468,8 @@ class IndexStore:
         Returns:
             Dict thống kê: total_files, by_doc_type, by_category
         """
-        if not self._conn: await self.init()
+        if not self._conn:
+            await self.init()
         # Tổng số files
         async with self._conn.execute("SELECT COUNT(*) FROM files") as cur:
             total = (await cur.fetchone())[0]

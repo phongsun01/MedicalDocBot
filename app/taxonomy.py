@@ -138,10 +138,7 @@ class Taxonomy:
         if cat is None:
             return []
 
-        return [
-            {"slug": slug, "label_vi": label}
-            for slug, label in cat.get("sub", {}).items()
-        ]
+        return [{"slug": slug, "label_vi": label} for slug, label in cat.get("sub", {}).items()]
 
     def find_category_by_label(self, label: str) -> dict[str, Any] | None:
         """

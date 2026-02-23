@@ -12,16 +12,16 @@ import logging
 import os
 import re
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
 from app.utils import clean_name
 
 if TYPE_CHECKING:
-    from app.index_store import IndexStore
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ DOC_TYPE_LABELS: dict[str, str] = {
 
 def _now_iso() -> str:
     """Timestamp ISO 8601 UTC."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _format_size(size_bytes: int) -> str:
@@ -136,14 +136,14 @@ class WikiGenerator:
         # device.yaml lưu "cat/group" trong category_slug, cần split
         full_group_slug = device_info.get("category_slug", "")
         group_slug = full_group_slug.split("/")[-1] if "/" in full_group_slug else ""
-        
+
         vendor = device_info.get("vendor", "")
         model = device_info.get("model", device_slug)
-        
+
         # Default labels nếu không có taxonomy
         cat_label = category_slug
         group_label = group_slug
-        
+
         if taxonomy:
             cat_data = taxonomy.get_category(category_slug)
             if cat_data:
@@ -201,11 +201,11 @@ class WikiGenerator:
 
         wiki_path.write_text(new_content, encoding="utf-8")
         logger.info("✅ Wiki cập nhật: %s", wiki_path)
-        
+
         # Auto-update indexes nếu có taxonomy
         if taxonomy:
             self.generate_indexes(taxonomy)
-            
+
         return wiki_path
 
     def generate_indexes(self, taxonomy: Any) -> list[Path]:
@@ -225,66 +225,70 @@ class WikiGenerator:
         lines = [
             "# 🏥 Danh mục thiết bị y tế\n",
             f"> Cập nhật: {_now_iso()}\n\n",
-            "## Các nhóm thiết bị chính\n"
+            "## Các nhóm thiết bị chính\n",
         ]
-        
+
         for cat in taxonomy.list_categories():
             cat_label = cat["label_vi"]
             safe_cat_label = clean_name(cat_label)
-            
+
             lines.append(f"- [[{safe_cat_label}/00_Index|{cat_label}]]\n")
-            
+
             # 2. Category Index
             cat_dir = self._wiki_dir / safe_cat_label
             cat_dir.mkdir(exist_ok=True)
             cat_index = cat_dir / "00_Index.md"
-            
+
             cat_lines = [
                 f"# 📂 {cat_label}\n",
                 f"> Slug: `{cat['slug']}`\n\n",
-                "## Các phân nhóm\n"
+                "## Các phân nhóm\n",
             ]
-            
+
             groups = taxonomy.list_groups(cat["slug"])
             for g in groups:
                 group_label = g["label_vi"]
                 safe_group_label = clean_name(group_label)
-                
-                cat_lines.append(f"- [[{safe_cat_label}/{safe_group_label}/00_Index|{group_label}]]\n")
-                
+
+                cat_lines.append(
+                    f"- [[{safe_cat_label}/{safe_group_label}/00_Index|{group_label}]]\n"
+                )
+
                 # 3. Group Index
                 group_dir = cat_dir / safe_group_label
                 group_dir.mkdir(exist_ok=True)
                 group_index = group_dir / "00_Index.md"
-                
+
                 # Scan files for static list
-                
+
                 if group_dir.exists():
-                    device_files = sorted([f.name for f in group_dir.glob("*.md") if f.name != "00_Index.md"])
+                    device_files = sorted(
+                        [f.name for f in group_dir.glob("*.md") if f.name != "00_Index.md"]
+                    )
 
                 group_lines = [
                     f"# 📑 {group_label}\n",
                     f"> Thuộc: [[{safe_cat_label}/00_Index|{cat_label}]]\n",
                     f"> Slug: `{g['slug']}`\n\n",
-                    "## Danh sách thiết bị\n"
+                    "## Danh sách thiết bị\n",
                 ]
-                
+
                 if device_files:
-                    group_lines.append(f"<!-- Files list -->\n")
+                    group_lines.append("<!-- Files list -->\n")
                     for df in device_files:
-                        name_display = df.replace('.md', '').replace('_', ' ')
+                        name_display = df.replace(".md", "").replace("_", " ")
                         group_lines.append(f"- [[{df}|{name_display}]]\n")
                 else:
                     group_lines.append("_(Chưa có thiết bị nào)_\n")
-                    
+
                 group_index.write_text("\n".join(group_lines), encoding="utf-8")
                 created_files.append(group_index)
-            
+
             cat_index.write_text("\n".join(cat_lines), encoding="utf-8")
             created_files.append(cat_index)
 
         root_index.write_text("".join(lines), encoding="utf-8")
         created_files.append(root_index)
-        
+
         logger.info("✅ Đã tạo %d index files", len(created_files))
         return created_files

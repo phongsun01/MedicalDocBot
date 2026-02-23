@@ -64,15 +64,14 @@ Chưa cần OCR, Paperless, hay semantic search.
 **Mục tiêu**: Hoàn thành 3 UC P0 — **(UC1) thêm file → classify → wiki update**, **(UC2) tìm kiếm**, **(UC3) gửi file**.
 Chưa cần Paperless.
 
-### 1.1 Auto-classify + confirm flow *(2–3 ngày)*
+### 1.1 Auto-classify + confirm flow *(✅ Hoàn thành — v2.5.0)*
 
-- `classifier.py`: rule-based (path/filename) → openClaw `file_classifier` → fallback rule
-- Confidence > 0.7 → suggest; ≤ 0.7 → hỏi user chọn
-- Bot: _"📄 `manual_vi.pdf` (2MB) → GE XR220. Đoán: **ky_thuat** (85%). [✅ Đúng] [✏️ Sửa]"_
-- Timeout 5 phút → default `khac` + log warning
-- `index_store.py` SQLite upsert sau confirm
+- `classifier.py`: AI via 9router local gateway → confidence score (0.0–1.0) từ model
+- **Mọi file** (kể cả confidence cao) → lưu DRAFT `confirmed=False` → bot gửi message với nút **✅ Phê duyệt** / **✏️ Chỉnh sửa**
+- Sau người dùng bấm approve: file mới được di chuyển + wiki mới được cập nhật  
+- Các bug quan trọng đã fix: Telegram HTML mode, `doc_type` multi-filter search, encapsulation `get_file_by_id`, rate-limit configurable
 
-**Deliverable**: Thêm 1 file → bot hỏi → trả lời → nhãn lưu đúng.
+**Deliverable**: Thêm 1 file → bot hỏi với nút → bấm Phê duyệt → nhãn lưu + wiki cập nhật. ✅
 
 ### 1.2 Wiki auto-update *(2–3 ngày)*
 
