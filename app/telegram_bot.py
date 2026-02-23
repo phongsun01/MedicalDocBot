@@ -232,11 +232,12 @@ async def _send_file_to_user(bot, chat_id, store, file_id: int):
 
     # Giới hạn Telegram Bot là 50MB
     if size_bytes > 50 * 1024 * 1024:
+        import html as _html
         size_mb = size_bytes / (1024 * 1024)
         msg_err = (
             f"❌ <b>Tệp quá lớn ({size_mb:.1f} MB)!</b>\n\n"
-            f"Telegram giới hạn bot chỉ gửi được tệp <50MB. Vui lòng truy cập thư mục trực tiếp:\n"
-            f"📂 <code>{file_path}</code>"
+            f"Telegram giới hạn bot chỉ gửi được tệp &lt;50MB. Vui lòng truy cập thư mục trực tiếp:\n"
+            f"📂 <code>{_html.escape(file_path)}</code>"
         )
         await bot.send_message(chat_id=chat_id, text=msg_err, parse_mode=ParseMode.HTML)
         return
@@ -391,7 +392,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except Exception as e:
             logger.error(f"Lỗi khi xử lý approve: {e}")
-            await _safe_edit(query, f"❌ Có lỗi khi phê duyệt: {e}")
+            import html as _html
+            await _safe_edit(query, f"❌ Có lỗi khi phê duyệt: {_html.escape(str(e))}")
 
     elif data.startswith("edit_"):
         file_id = data.split("_")[1]

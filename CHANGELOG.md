@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.6.4] - 2026-02-24
+
+### Fixed
+- **`_send_file_to_user` (large file path)**: Applied `html.escape` to `file_path` in "file too large" error message and corrected `<50MB` literal to `&lt;50MB` to prevent HTML injection.
+- **`button_callback` (approve error)**: Applied `html.escape(str(e))` on exception message before embedding in Telegram HTML reply — prevents `BadRequest` when OS/path errors contain `<`, `>`, or `&`.
+- **`MedicalClassifier` docstring**: Updated stale "Gemini" reference to "9router local gateway" to accurately reflect the actual AI backend.
+
+---
+
 ## [2.6.3] - 2026-02-24
 
 ### Fixed

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class MedicalClassifier:
-    """Xử lý phân loại file tài liệu y tế bằng Gemini."""
+    """Xử lý phân loại file tài liệu y tế bằng 9router local gateway."""
 
     def __init__(self, config_path: str = "config.yaml"):
         with open(config_path, encoding="utf-8") as f:
