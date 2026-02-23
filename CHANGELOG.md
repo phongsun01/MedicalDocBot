@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.6.2] - 2026-02-24
+
+### Fixed
+- **Bot Crash Loop**: Added `_safe_edit` helper to prevent unhandled Telegram API exceptions if `edit_message_text` raises due to identical messages.
+- **Race Condition in File Sync**: Reordered `shutil.move` to execute *before* `confirm_file_and_update_path` to prevent Database path updates without successful physical file moves.
+- **Data Corruption**: Removed redundant `confirm_file` call before `confirm_file_and_update_path` which caused the Database to save the old path instead of the new categorized path.
+- **UI Markdown Formatting**: Switched all bot message outputs (including `/status`, `/find`, `/latest`) to `ParseMode.HTML` wrapped with `html.escape` to resolve unrendered `**bold**` tags and API exceptions caused by unescaped backticks.
+- **Service Stability**: Implemented `is_connected()` abstraction for SQLite checking instead of unsafe private member access.
+- **Startup Errors**: Handled `RuntimeError` gracefully when initializing database `_backfill` outside of an active asyncio event loop.
+- **Environment Side-effects**: Re-scoped `load_dotenv` and `logging.basicConfig` to the CLI entry point to prevent test environment pollution when importing `process_event`.
+
+---
+
 ## [2.6.1] - 2026-02-24
 
 ### Fixed
