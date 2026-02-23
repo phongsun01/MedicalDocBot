@@ -38,3 +38,6 @@ htmlcov/
 
 # Ruff
 .ruff_cache/
+
+# Agent
+.agent/
