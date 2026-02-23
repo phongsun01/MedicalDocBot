@@ -259,8 +259,12 @@ async def _send_file_to_user(bot, chat_id, store, file_id: int):
         await msg.delete()  # Xóa tin nhắn "Đang tải"
     except Exception as e:
         logger.error(f"Lỗi gửi file: {e}")
+        import html as _html
         await bot.edit_message_text(
-            chat_id=chat_id, message_id=msg.message_id, text=f"❌ Có lỗi xảy ra khi tải file: {e}"
+            chat_id=chat_id, 
+            message_id=msg.message_id, 
+            text=f"❌ Có lỗi xảy ra khi tải file: {_html.escape(str(e))}",
+            parse_mode=ParseMode.HTML
         )
 
 
@@ -270,12 +274,14 @@ async def send_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tg_config = config.get("services", {}).get("telegram", {})
     group_chat_id = str(tg_config.get("group_chat_id", ""))
     admin_chat_id = str(tg_config.get("admin_chat_id", ""))
-    allowed_users = tg_config.get("allowed_users", [])
+    # Normalize về str để tránh lỗi so sánh int vs str từ YAML
+    allowed_users = [str(u) for u in tg_config.get("allowed_users", [])]
+    admin_chat_id_str = str(tg_config.get("admin_chat_id", ""))
 
     chat_id = str(update.effective_chat.id)
-    user_id = update.effective_user.id
+    user_id_str = str(update.effective_user.id)
 
-    if chat_id != group_chat_id and str(user_id) != admin_chat_id and user_id not in allowed_users:
+    if chat_id != group_chat_id and user_id_str != admin_chat_id_str and user_id_str not in allowed_users:
         await update.message.reply_text("❌ Bạn không có quyền truy cập file từ bot này.")
         return
 
@@ -426,16 +432,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_info = await store.get_file_by_id(file_id)
             if file_info:
                 from app.slug import build_device_slug
-                device_slug, category_slug, group_slug = build_device_slug(
+                # build_device_slug trả về str, không phải tuple — lấy slug riêng
+                device_slug = build_device_slug(
                     file_info.get("vendor", "Unknown"),
                     file_info.get("model", "Unknown"),
-                    new_type
                 )
+                # category_slug và group_slug giữ nguyên từ DB, không tính lại từ doc_type
                 await store.update_file_metadata(file_id, {
                     "doc_type": new_type,
                     "device_slug": device_slug,
-                    "category_slug": category_slug,
-                    "group_slug": group_slug
                 })
         
         # Gọi lại refresh_draft (mô phỏng callback query)
@@ -500,16 +505,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # Lấy values cũ để tái cấu trúc slug
                     v = new_val if field == "vendor" else file_info.get("vendor", "Unknown")
                     m = new_val if field == "model" else file_info.get("model", "Unknown")
-                    t = file_info.get("doc_type", "khac")
 
                     from app.slug import build_device_slug
-                    device_slug, category_slug, group_slug = build_device_slug(v, m, t)
+                    # build_device_slug trả về str, không phải tuple
+                    device_slug = build_device_slug(v, m)
                     
                     await store.update_file_metadata(file_id, {
                         field: new_val,
                         "device_slug": device_slug,
-                        "category_slug": category_slug,
-                        "group_slug": group_slug
                     })
 
                     # Xoá tin nhắn reply và tin nhắn ForceReply của bot
@@ -534,7 +537,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception as e:
                         logger.error(f"Lỗi refresh sau edit: {e}")
 
-            del context.user_data["awaiting_input"]
+            finally:
+                # Đảm bảo state awaiting_input luôn được xóa dù có exception
+                del context.user_data["awaiting_input"]
             return
 
     # Chỉ auto-search trong private chat để tránh spam group

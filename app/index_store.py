@@ -471,20 +471,25 @@ class IndexStore:
 
     async def update_file_metadata(self, file_id: int, updates: dict[str, Any]) -> None:
         """
-        Cập nhật nhiều trường metadata cùng lúc cho một file.
+        Cập nhật một hoặc nhiều trường metadata cho một file.
 
         Args:
-            file_id: ID của file trong DB
-            updates: Dictionary chứa các trường cần cập nhật (vd: {"vendor": "GE", "model": "Optima"})
+            file_id: ID của file cần cập nhật.
+            updates: Dictionary chứa tên trường và giá trị mới.
         """
-        if not self._conn:
-            await self.init()
         if not updates:
             return
 
+        await self.init_db()
+
+        _ALLOWED_UPDATE_COLUMNS = {"vendor", "model", "doc_type", "device_slug",
+                                   "category_slug", "group_slug", "summary"}
+
         set_clauses = []
-        params = []
+        params: list[Any] = []
         for key, value in updates.items():
+            if key not in _ALLOWED_UPDATE_COLUMNS:
+                raise ValueError(f"Cột không được phép cập nhật: {key}")
             set_clauses.append(f"{key} = ?")
             params.append(value)
 

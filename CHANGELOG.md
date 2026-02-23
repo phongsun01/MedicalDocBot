@@ -1,6 +1,16 @@
 # Changelog
 
-## [2.7.1] - 2026-02-23
+## [2.7.2] - 2026-02-24
+### Fixed
+- **Critical**: Tuple unpacking error in `build_device_slug()` when used in `telegram_bot.py`.
+- **Critical**: `MedicalClassifier` lock initialization moved inside coroutine to bind to correct asyncio event loop.
+- **Security**: Added explicit column allowlist for `update_file_metadata()` to prevent SQL injection.
+- **Security**: Fixed type mismatch (`int` vs `str`) in Telegram `/send` access control.
+- **Reliability**: Ensured `awaiting_input` state is always cleared in `finally` blocks.
+- **UI**: Corrected HTML escaping for error messages in file sending flow.
+- **Refactoring**: Removed unused `huong_dan_su_dung` mapping and dead imports.
+
+## [2.7.1] - 2026-02-24
 ### Fixed
 - **Security**: Fixed a potential SQL injection vulnerability in `IndexStore.search` handling of the `order_by` clause by enforcing strict whitelist-based reconstruction.
 - **Security**: Added strict access control to the Telegram `/send` command to prevent unauthorized file downloads. Access is now restricted to the target `group_chat_id`, the specified `admin_chat_id`, and a configurable `allowed_users` list.

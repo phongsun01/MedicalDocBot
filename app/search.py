@@ -23,8 +23,6 @@ DOC_TYPE_MAP = {
     "trúng thầu": "trung_thau",
     "so sánh": "so_sanh",
     "ss": "so_sanh",
-    "hướng dẫn": "huong_dan_su_dung",
-    "hdsd": "huong_dan_su_dung",
 }
 
 

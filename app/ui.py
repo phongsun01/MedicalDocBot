@@ -11,7 +11,6 @@ DOC_TYPE_MAP = {
     "hop_dong": "Hợp đồng",
     "so_sanh": "So sánh",
     "thong_tin": "Thông tin",
-    "huong_dan_su_dung": "Hướng dẫn",
     "khac": "Khác",
 }
 
