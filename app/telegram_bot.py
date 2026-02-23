@@ -137,7 +137,8 @@ async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = Path(row["path"]).name
             doc_type = row.get("doc_type", "Unknown")
             vendor = row.get("vendor", "Unknown")
-            file_path_str = str(row["path"]).replace("/Users/xitrum/MedicalDevices/", "")
+            root = config.get("paths", {}).get("medical_devices_root", "")
+            file_path_str = str(row["path"]).replace(root + "/", "").replace(root, "") if root else str(row["path"])
             file_id = row.get("id")
 
             name_safe = html.escape(name)
@@ -265,6 +266,19 @@ async def _send_file_to_user(bot, chat_id, store, file_id: int):
 
 async def send_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gửi file trực tiếp bằng lệnh /send <ID>"""
+    global config
+    tg_config = config.get("services", {}).get("telegram", {})
+    group_chat_id = str(tg_config.get("group_chat_id", ""))
+    admin_chat_id = str(tg_config.get("admin_chat_id", ""))
+    allowed_users = tg_config.get("allowed_users", [])
+
+    chat_id = str(update.effective_chat.id)
+    user_id = update.effective_user.id
+
+    if chat_id != group_chat_id and str(user_id) != admin_chat_id and user_id not in allowed_users:
+        await update.message.reply_text("❌ Bạn không có quyền truy cập file từ bot này.")
+        return
+
     if not context.args:
         await update.message.reply_text(
             "💡 Cách dùng: <code>/send &lt;ID_File&gt;</code>\nSử dụng /find để lấy ID hoặc bấm nút Tải file.",
@@ -368,8 +382,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await store.confirm_file(file_id)
 
             # Cập nhật Wiki
-            taxonomy = Taxonomy(config["paths"]["taxonomy_file"])
-            wiki = WikiGenerator("config.yaml")
+            taxonomy = context.bot_data.get("taxonomy")
+            wiki = context.bot_data.get("wiki")
 
             device_info = {
                 "vendor": vendor,
@@ -379,10 +393,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
             all_files = await store.search(device_slug=device_slug)
             
-            # Cập nhật file markdown riêng cho device
+            # Cập nhật file markdown riêng cho device (hàm này tự động gọi generate_indexes)
             wiki.update_device_wiki(device_slug, device_info, all_files, taxonomy=taxonomy)
-            # Cập nhật lại toàn bộ các file Index.md (do có thư mục/device mới)
-            wiki.generate_indexes(taxonomy)
 
             import html
             import datetime
@@ -554,8 +566,16 @@ async def main():
 
     app = ApplicationBuilder().token(token).build()
 
-    # Lưu store vào bot_data để các handler sử dụng
+    # Init Taxonomy và Wiki (inject vào bot_data để không phải tạo lại mỗi callback)
+    from app.taxonomy import Taxonomy
+    from app.wiki_generator import WikiGenerator
+    taxonomy = Taxonomy(config["paths"]["taxonomy_file"])
+    wiki = WikiGenerator("config.yaml")
+
+    # Lưu dependencies vào bot_data để các handler sử dụng
     app.bot_data["store"] = store
+    app.bot_data["taxonomy"] = taxonomy
+    app.bot_data["wiki"] = wiki
 
     # Handlers
     app.add_handler(CommandHandler("start", start))

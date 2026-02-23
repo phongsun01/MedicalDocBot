@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.7.1] - 2026-02-23
+### Fixed
+- **Security**: Fixed a potential SQL injection vulnerability in `IndexStore.search` handling of the `order_by` clause by enforcing strict whitelist-based reconstruction.
+- **Security**: Added strict access control to the Telegram `/send` command to prevent unauthorized file downloads. Access is now restricted to the target `group_chat_id`, the specified `admin_chat_id`, and a configurable `allowed_users` list.
+- **Core**: Resolved unreliable thread-safety in `classifier.py`'s `_request_lock` initialization.
+- **Core**: Fixed duplicate calls to `WikiGenerator.generate_indexes` during the UI inline approval flow.
+- **Core**: Centralized definition of `CATEGORY_MAP` and `GROUP_MAP` in `process_event.py` for performance. 
+- **Misc**: Replaced hardcoded root paths with configurations pulled dynamically from `config.yaml` to improve cross-platform portability.
+- **Misc**: Cleaned up minor regex boundaries in `search.py` and duplicate mappings in `slug.py`.
+
+
 ## [2.7.0] - 2026-02-24
 
 ### Added

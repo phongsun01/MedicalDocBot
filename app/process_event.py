@@ -31,6 +31,30 @@ logger = logging.getLogger(__name__)
 
 # clean_name moved to app.utils
 
+# Correction maps for AI hallucinations — module-level constants (created once)
+_CATEGORY_MAP: dict[str, str] = {
+    "ngoai_khoa": "thiet_bi_phong_mo",
+    "phau_thuat": "thiet_bi_phong_mo",
+    "phong_mo": "thiet_bi_phong_mo",
+    "trang_thiet_bi_phong_mo": "thiet_bi_phong_mo",
+    "thiet-bi-phong-mo": "thiet_bi_phong_mo",
+    "thiet_bi_hoi_suc": "hoi_suc_cap_cuu",
+    "thiet_bi_hoi_suc_gay_me": "gay_me_may_tho",
+    "Unknown": "chua_phan_loai",
+    "khac": "chua_phan_loai",
+}
+
+_GROUP_MAP: dict[str, str] = {
+    "Unknown": "khac",
+    "may_tho": "may_tho_hoi_suc",
+    "phong_mo": "khac",
+    "thiet_bi_phong_mo": "khac",
+    "ban-mo": "ban_mo",
+    "monitor_benh_nhan": "monitor",
+    "may_theo_doi_benh_nhan": "monitor",
+    "bon_rua_tay_phau_thuat": "bon_rua_tay",
+}
+
 
 
 def detect_manual_placement(file_path: str, config: dict) -> dict | None:
@@ -169,32 +193,8 @@ async def process_new_file(
         category_slug = clean_name(full_category_slug) if full_category_slug else "chua_phan_loai"
         group_slug = "khac"
 
-    # --- Auto-correct AI Hallucinations ---
-    CATEGORY_MAP = {
-        "ngoai_khoa": "thiet_bi_phong_mo",
-        "phau_thuat": "thiet_bi_phong_mo",
-        "phong_mo": "thiet_bi_phong_mo",
-        "trang_thiet_bi_phong_mo": "thiet_bi_phong_mo",
-        "thiet-bi-phong-mo": "thiet_bi_phong_mo",
-        "thiet_bi_hoi_suc": "hoi_suc_cap_cuu",
-        "thiet_bi_hoi_suc_gay_me": "gay_me_may_tho",
-        "Unknown": "chua_phan_loai",
-        "khac": "chua_phan_loai",
-    }
-
-    GROUP_MAP = {
-        "Unknown": "khac",
-        "may_tho": "may_tho_hoi_suc",
-        "phong_mo": "khac",
-        "thiet_bi_phong_mo": "khac",
-        "ban-mo": "ban_mo",
-        "monitor_benh_nhan": "monitor",
-        "may_theo_doi_benh_nhan": "monitor",
-        "bon_rua_tay_phau_thuat": "bon_rua_tay",
-    }
-
-    category_slug = CATEGORY_MAP.get(category_slug, category_slug)
-    group_slug = GROUP_MAP.get(group_slug, group_slug)
+    category_slug = _CATEGORY_MAP.get(category_slug, category_slug)
+    group_slug = _GROUP_MAP.get(group_slug, group_slug)
 
     # --- Strict Taxonomy Validation ---
     if not taxonomy.get_category(category_slug):

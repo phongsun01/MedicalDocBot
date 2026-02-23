@@ -38,15 +38,29 @@ class MedicalClassifier:
 
     # Rate limiting variables (class level)
     _last_request_time: float = 0.0
-    _request_lock: Any = None
+    _request_lock: asyncio.Lock | None = None
+    _lock_init_sync: Any = None
+    
+    @classmethod
+    def get_lock(cls) -> asyncio.Lock:
+        if cls._request_lock is None:
+            import threading
+            if cls._lock_init_sync is None:
+                cls._lock_init_sync = threading.Lock()
+            with cls._lock_init_sync:
+                if cls._request_lock is None:
+                    cls._request_lock = asyncio.Lock()
+                    
+        lock = cls._request_lock
+        assert lock is not None
+        return lock
 
     async def classify_file(self, file_path: str, max_retries: int | None = None) -> dict:
         """
         Phân loại tài liệu bằng AI qua 9router local gateway.
         Đọc nội dung file nếu có thể để tăng độ chính xác.
         """
-        if MedicalClassifier._request_lock is None:
-            MedicalClassifier._request_lock = asyncio.Lock()
+        lock = self.get_lock()
 
         if max_retries is None:
             max_retries = self.max_retries
@@ -103,7 +117,7 @@ Lưu ý quan trọng:
             for attempt in range(max_retries):
                 try:
                     # Rate Limiting
-                    async with MedicalClassifier._request_lock:
+                    async with lock:
                         now = time.monotonic()
                         time_since_last = now - MedicalClassifier._last_request_time
                         if time_since_last < self.rate_limit_seconds:
