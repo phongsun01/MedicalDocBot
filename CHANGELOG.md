@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.7.0] - 2026-02-24
+
+### Added
+- **UC2 Edit Classification Flow**: Implemented the full Telegram inline edit experience.
+  - Tapping "✏️ Chỉnh sửa" now shows a submenu with 3 editable field buttons (Hãng, Model, Loại) and a Back button.
+  - **Sửa Hãng / Sửa Model**: Bot sends a `ForceReply` prompt. User replies with the new value. Bot updates DB, recalculates `device_slug`, deletes the reply clutter, and refreshes the original draft message.
+  - **Sửa Loại**: Bot shows a 2-column `InlineKeyboardMarkup` with 9 document types. Bot updates DB on tap and refreshes draft.
+  - Back button restores original approve/edit keyboard.
+- **`app/ui.py` (NEW)**: Shared rendering module — `render_draft_message`, `render_edit_menu`, `render_type_selection_menu`. Used by both `process_event.py` and `telegram_bot.py` to eliminate HTML duplication.
+- **`IndexStore.update_file_metadata`**: New atomic method to update multiple DB columns in one query.
+- **`_safe_edit`**: Added `reply_markup` parameter to support refreshing interactive keyboards.
+
+### Changed
+- `process_event.py`: Now uses `render_draft_message` from `app.ui` instead of hardcoded HTML strings.
+- `telegram_bot.py`: Added `_refresh_draft_message` helper; `handle_message` now intercepts ForceReply before generic auto-search.
+
+---
+
 ## [2.6.4] - 2026-02-24
 
 ### Fixed

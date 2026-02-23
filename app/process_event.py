@@ -19,6 +19,7 @@ from app.slug import build_device_slug
 from app.taxonomy import Taxonomy
 from app.utils import clean_name, compute_sha256
 from app.wiki_generator import WikiGenerator
+from app.ui import DOC_TYPE_MAP, render_draft_message
 
 load_dotenv(override=False)
 
@@ -26,17 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Helper functions moved or removed (Dependency Injection used instead)
 
-DOC_TYPE_MAP = {
-    "ky_thuat": "Kỹ thuật",
-    "cau_hinh": "Cấu hình",
-    "bao_gia": "Báo giá",
-    "trung_thau": "Trúng thầu",
-    "hop_dong": "Hợp đồng",
-    "so_sanh": "So sánh",
-    "thong_tin": "Thông tin",
-    "lien_ket": "Liên kết",
-    "khac": "Khác",
-}
+# DOC_TYPE_MAP moved to app.ui
 
 # clean_name moved to app.utils
 
@@ -258,48 +249,19 @@ async def process_new_file(
 
     # 5. Cập nhật Wiki -> Bỏ qua, chỉ làm khi user ấn Confirm
 
-    # 6. Gửi báo cáo Telegram (HTML)
-    esc = html.escape  # Tắtăt
-    safe_filename = esc(Path(file_path).name)
-    safe_vendor = esc(vendor)
-    safe_model = esc(model)
-    safe_doc_type = esc(doc_type_vi)
-    safe_summary = esc(summary)
-    safe_location = esc(str(target_relative))
-    safe_confidence = f"{confidence * 100:.0f}%"
-
-    if is_confident:
-        report = (
-            f"📄 <b>Phát hiện tài liệu mới!</b> (Độ tin cậy cao)\n\n"
-            f"<b>File:</b> <code>{safe_filename}</code>\n"
-            f"<b>Hãng:</b> {safe_vendor}\n"
-            f"<b>Model:</b> {safe_model}\n"
-            f"<b>Loại:</b> {safe_doc_type} ({safe_confidence})\n"
-            f"<b>Tóm tắt:</b> <i>{safe_summary}</i>\n\n"
-            f"📁 <b>Đề xuất lưu vào:</b> <code>{safe_location}</code>\n\n"
-            f"Vui lòng xác nhận để hệ thống lưu và cập nhật Wiki."
-        )
-    else:
-        report = (
-            f"⚠️ <b>Cần xác nhận phân loại!</b> (AI không chắc chắn)\n\n"
-            f"<b>File:</b> <code>{safe_filename}</code>\n"
-            f"<b>Hãng đề xuất:</b> {safe_vendor}\n"
-            f"<b>Model đề xuất:</b> {safe_model}\n"
-            f"<b>Loại dự đoán:</b> {safe_doc_type} ({safe_confidence})\n"
-            f"<b>Tóm tắt:</b> <i>{safe_summary}</i>\n\n"
-            f"📁 <b>Đề xuất lưu vào:</b> <code>{safe_location}</code>\n\n"
-            f"Vui lòng xác nhận để hệ thống lưu và cập nhật Wiki."
-        )
-
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ Phê duyệt", callback_data=f"approve_{file_id}"),
-            InlineKeyboardButton("✏️ Chỉnh sửa", callback_data=f"edit_{file_id}"),
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    file_info = {
+        "id": file_id,
+        "path": file_path,
+        "vendor": vendor,
+        "model": model,
+        "doc_type": doc_type,
+        "summary": summary,
+        "category_slug": category_slug,
+        "group_slug": group_slug,
+        "device_slug": device_slug
+    }
+    
+    report, reply_markup = render_draft_message(file_info, config, confidence, is_confident)
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     group_chat_id = config["services"]["telegram"].get("group_chat_id")

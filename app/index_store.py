@@ -472,6 +472,35 @@ class IndexStore:
             rows = await cursor.fetchall()
             return {row[0]: row[1] for row in rows}
 
+    async def update_file_metadata(self, file_id: int, updates: dict[str, Any]) -> None:
+        """
+        Cập nhật nhiều trường metadata cùng lúc cho một file.
+
+        Args:
+            file_id: ID của file trong DB
+            updates: Dictionary chứa các trường cần cập nhật (vd: {"vendor": "GE", "model": "Optima"})
+        """
+        if not self._conn:
+            await self.init()
+        if not updates:
+            return
+
+        set_clauses = []
+        params = []
+        for key, value in updates.items():
+            set_clauses.append(f"{key} = ?")
+            params.append(value)
+
+        # Cập nhật updated_at
+        set_clauses.append("updated_at = ?")
+        params.append(_now_iso())
+
+        params.append(file_id)
+
+        sql = f"UPDATE files SET {', '.join(set_clauses)} WHERE id = ?"
+        await self._conn.execute(sql, tuple(params))
+        await self._conn.commit()
+
     async def log_event(self, event_type: str, file_path: str) -> None:
         """
         Ghi log sự kiện watcher vào DB.

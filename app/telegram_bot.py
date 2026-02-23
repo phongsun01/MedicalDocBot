@@ -282,9 +282,9 @@ async def send_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _send_file_to_user(context.bot, update.effective_chat.id, store, file_id)
 
 
-async def _safe_edit(query, text, parse_mode=None):
+async def _safe_edit(query, text, parse_mode=None, reply_markup=None):
     try:
-        await query.edit_message_text(text, parse_mode=parse_mode)
+        await query.edit_message_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
     except Exception as tg_err:
         if "Message is not modified" not in str(tg_err):
             logger.error(f"Lỗi khi edit_message_text: {tg_err}")
@@ -395,22 +395,141 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             import html as _html
             await _safe_edit(query, f"❌ Có lỗi khi phê duyệt: {_html.escape(str(e))}")
 
-    elif data.startswith("edit_"):
-        file_id = data.split("_")[1]
-        msg = f"Sắp tới mình sẽ hỗ trợ chỉnh sửa trực tiếp. Tạm thời dùng /update {file_id} doc_type."
-        await _safe_edit(query, msg)
+    elif data.startswith("edit_menu_"):
+        file_id = int(data.split("_")[2])
+        from app.ui import render_edit_menu
+        await query.edit_message_reply_markup(reply_markup=render_edit_menu(file_id))
+
+    elif data.startswith("edit_type_"):
+        file_id = int(data.split("_")[2])
+        from app.ui import render_type_selection_menu
+        await query.edit_message_reply_markup(reply_markup=render_type_selection_menu(file_id))
+
+    elif data.startswith("set_type_"):
+        parts = data.split("_")
+        file_id = int(parts[2])
+        new_type = "_".join(parts[3:])
+        store: IndexStore | None = context.bot_data.get("store")
+        if store:
+            file_info = await store.get_file_by_id(file_id)
+            if file_info:
+                from app.slug import build_device_slug
+                device_slug, category_slug, group_slug = build_device_slug(
+                    file_info.get("vendor", "Unknown"),
+                    file_info.get("model", "Unknown"),
+                    new_type
+                )
+                await store.update_file_metadata(file_id, {
+                    "doc_type": new_type,
+                    "device_slug": device_slug,
+                    "category_slug": category_slug,
+                    "group_slug": group_slug
+                })
+        
+        # Gọi lại refresh_draft (mô phỏng callback query)
+        await _refresh_draft_message(query, context, file_id)
+
+    elif data.startswith("edit_vendor_") or data.startswith("edit_model_"):
+        parts = data.split("_")
+        field = parts[1]
+        file_id = int(parts[2])
+        
+        from telegram import ForceReply
+        field_name = "Hãng" if field == "vendor" else "Model"
+        msg = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"Vui lòng nhập {field_name} mới:",
+            reply_markup=ForceReply(selective=True)
+        )
+        context.user_data["awaiting_input"] = {
+            "message_id": msg.message_id,
+            "file_id": file_id,
+            "field": field,
+            "original_message_id": query.message.message_id
+        }
+
+    elif data.startswith("refresh_draft_"):
+        file_id = int(data.split("_")[2])
+        await _refresh_draft_message(query, context, file_id)
+
+async def _refresh_draft_message(query, context, file_id: int):
+    store: IndexStore | None = context.bot_data.get("store")
+    if not store:
+        return
+    file_info = await store.get_file_by_id(file_id)
+    if not file_info:
+        await _safe_edit(query, "❌ Tệp không còn tồn tại.")
+        return
+    
+    from app.ui import render_draft_message
+    report, reply_markup = render_draft_message(file_info, config, confidence=None, is_confident=True)
+    await _safe_edit(query, report, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Xử lý tin nhắn văn bản (tự động tìm kiếm)."""
+    """Xử lý tin nhắn văn bản (tự động tìm kiếm hoặc xử lý ForceReply)."""
+    text = update.message.text
+
+    # Kiểm tra ForceReply Edit Flow
+    if "awaiting_input" in context.user_data:
+        input_data = context.user_data["awaiting_input"]
+        # Phải là một Reply thực sự vào đúng tin nhắn Bot vừa yêu cầu
+        if update.message.reply_to_message and update.message.reply_to_message.message_id == input_data["message_id"]:
+            file_id = input_data["file_id"]
+            field = input_data["field"]
+            original_message_id = input_data["original_message_id"]
+
+            store: IndexStore | None = context.bot_data.get("store")
+            if store:
+                file_info = await store.get_file_by_id(file_id)
+                if file_info:
+                    new_val = text.strip()
+                    # Lấy values cũ để tái cấu trúc slug
+                    v = new_val if field == "vendor" else file_info.get("vendor", "Unknown")
+                    m = new_val if field == "model" else file_info.get("model", "Unknown")
+                    t = file_info.get("doc_type", "khac")
+
+                    from app.slug import build_device_slug
+                    device_slug, category_slug, group_slug = build_device_slug(v, m, t)
+                    
+                    await store.update_file_metadata(file_id, {
+                        field: new_val,
+                        "device_slug": device_slug,
+                        "category_slug": category_slug,
+                        "group_slug": group_slug
+                    })
+
+                    # Xoá tin nhắn reply và tin nhắn ForceReply của bot
+                    try:
+                        await update.message.delete()
+                        await context.bot.delete_message(chat_id=update.message.chat_id, message_id=input_data["message_id"])
+                    except Exception:
+                        pass # Bot không có quyền xoá trong group? Vẫn tiếp tục
+
+                    # Refresh lại thông báo Draft
+                    from app.ui import render_draft_message
+                    updated_file_info = await store.get_file_by_id(file_id)
+                    report, reply_markup = render_draft_message(updated_file_info, config, confidence=None, is_confident=True)
+                    try:
+                        await context.bot.edit_message_text(
+                            chat_id=update.message.chat_id,
+                            message_id=original_message_id,
+                            text=report,
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=reply_markup
+                        )
+                    except Exception as e:
+                        logger.error(f"Lỗi refresh sau edit: {e}")
+
+            del context.user_data["awaiting_input"]
+            return
+
     # Chỉ auto-search trong private chat để tránh spam group
     if update.effective_chat.type != "private":
         return
 
-    text = update.message.text
     if not text.startswith("/"):
-        # Coi như là lệnh find
-        # Need to pass the text as context.args for the find function
         context.args = text.split()
         await find(update, context)
 
