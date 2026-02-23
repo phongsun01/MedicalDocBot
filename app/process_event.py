@@ -20,9 +20,8 @@ from app.taxonomy import Taxonomy
 from app.utils import clean_name, compute_sha256
 from app.wiki_generator import WikiGenerator
 
-load_dotenv()
+load_dotenv(override=False)
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Helper functions moved or removed (Dependency Injection used instead)
@@ -322,6 +321,9 @@ async def process_new_file(
 
 
 async def main_cli():
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    )
     if len(sys.argv) < 2:
         print("Usage: python process_event.py <file_path>")
         return

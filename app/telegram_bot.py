@@ -185,21 +185,22 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else "Unknown"
         )
 
+        import html
         msg = (
-            f"🟢 **Hệ thống đang hoạt động**\n"
-            f"- 🗂 Tổng số file: `{count}`\n"
+            f"🟢 <b>Hệ thống đang hoạt động</b>\n"
+            f"- 🗂 Tổng số file: <code>{count}</code>\n"
             f"- 📡 Bot: Online\n"
-            f"- 🧠 AI Model: `{model_name}`"
+            f"- 🧠 AI Model: <code>{html.escape(model_name)}</code>"
         )
     except Exception as e:
         msg = f"🔴 Lỗi lấy trạng thái: {e}"
 
-    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 
 async def _send_file_to_user(bot, chat_id, store, file_id: int):
     """Logic cốt lõi gửi file."""
-    if not store or not store._conn:
+    if not store or not store.is_connected():
         await bot.send_message(chat_id=chat_id, text="❌ Lỗi: Database chưa kết nối.")
         return
 
@@ -277,6 +278,14 @@ async def send_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _send_file_to_user(context.bot, update.effective_chat.id, store, file_id)
 
 
+async def _safe_edit(query, text, parse_mode=None):
+    try:
+        await query.edit_message_text(text, parse_mode=parse_mode)
+    except Exception as tg_err:
+        if "Message is not modified" not in str(tg_err):
+            logger.error(f"Lỗi khi edit_message_text: {tg_err}")
+
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xử lý sự kiện click vào nút Inline Keyboard"""
     query = update.callback_query
@@ -313,9 +322,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             file_path = file_info.get("path", "")
 
-            # Đánh dấu đã confirm qua API public
-            await store.confirm_file(file_id)
-
             # --- Thực hiện di chuyển file & Wiki ---
             import shutil
             from pathlib import Path
@@ -341,17 +347,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             new_path = target_dir / Path(file_path).name
 
             if Path(file_path).resolve() != new_path.resolve() and os.path.exists(file_path):
-                # Update DB first for safety
                 new_path_str = str(new_path)
                 import unidecode
 
                 search_data = f"{new_path_str} {vendor} {model} {file_info.get('summary', '')} {doc_type}".lower()
                 search_text = unidecode.unidecode(search_data)
 
-                await store.confirm_file_and_update_path(file_id, new_path_str, search_text)
-
-                shutil.move(file_path, new_path)
-                file_path = new_path_str
+                try:
+                    shutil.move(file_path, new_path)
+                    await store.confirm_file_and_update_path(file_id, new_path_str, search_text)
+                    file_path = new_path_str
+                except Exception as move_err:
+                    logger.error(f"Move file thất bại, rollback DB: {move_err}")
+                    raise
+            else:
+                await store.confirm_file(file_id)
 
             # Cập nhật Wiki
             taxonomy = Taxonomy(config["paths"]["taxonomy_file"])
@@ -374,15 +384,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             import datetime
             now_str = datetime.datetime.now().strftime("%H:%M:%S")
             msg = f"✅ Đã phê duyệt và xử lý xong ({now_str}):\n📁 <code>{html.escape(str(target_relative))}</code>"
-            try:
-                await query.edit_message_text(msg, parse_mode=ParseMode.HTML)
-            except Exception as tg_err:
-                if "Message is not modified" not in str(tg_err):
-                    raise tg_err
+            await _safe_edit(query, msg, parse_mode=ParseMode.HTML)
 
         except Exception as e:
             logger.error(f"Lỗi khi xử lý approve: {e}")
-            await query.edit_message_text(f"❌ Có lỗi khi phê duyệt: {e}")
+            await _safe_edit(query, f"❌ Có lỗi khi phê duyệt: {e}")
 
     elif data.startswith("edit_"):
         file_id = data.split("_")[1]

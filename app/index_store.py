@@ -83,6 +83,10 @@ class IndexStore:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn: aiosqlite.Connection | None = None
 
+    def is_connected(self) -> bool:
+        """Kiểm tra kết nối CSDL."""
+        return self._conn is not None
+
     async def init(self) -> None:
         """Tạo schema nếu chưa có và migrate nếu cần."""
         if not self._conn:
@@ -139,7 +143,11 @@ class IndexStore:
                 logger.error("Lỗi khi backfill search_text: %s", e)
 
         import asyncio
-        asyncio.create_task(_backfill())
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_backfill())
+        except RuntimeError:
+            logger.warning("Không có running event loop, bỏ qua backfill search_text.")
 
         await self._conn.commit()
         logger.info("IndexStore khởi tạo: %s", self._db_path)
