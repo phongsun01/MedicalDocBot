@@ -77,19 +77,24 @@ async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         msg = "🆕 <b>5 Tài liệu mới nhất:</b>\n\n"
-        for idx, file in enumerate(results, 1):
-            name = Path(file["path"]).name
-            doc_type = file.get("doc_type", "Khác")
-            vendor = file.get("vendor") or file.get("device_slug")
-            summary = file.get("summary") or "Không có tóm tắt"
-
+        import html
+        for i, row in enumerate(results, 1):
+            name = Path(row["path"]).name
+            doc_type = row.get("doc_type", "Chưa phân loại")
+            vendor = row.get("vendor", "Unknown")
+            summary = row.get("summary", "Không có tóm tắt")
+            
             # Cắt ngắn summary nếu quá dài
             if len(summary) > 50:
                 summary = summary[:47] + "..."
-
-            msg += f"{idx}. <b>{name}</b>\n"
-            msg += f"   🏷 {doc_type} | 🏭 {vendor}\n"
-            msg += f"   📝 <i>{summary}</i>\n\n"
+            
+            name_safe = html.escape(name)
+            vendor_safe = html.escape(str(vendor))
+            summary_safe = html.escape(summary)
+            
+            msg += f"{i}. <b>{name_safe}</b>\n"
+            msg += f"   🏷 {doc_type} | 🏭 {vendor_safe}\n"
+            msg += f"   📝 <i>{summary_safe}</i>\n\n"
 
         await update.message.reply_html(msg)
 
@@ -124,25 +129,32 @@ async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         keyboard = []
-        msg = f'🔎 <b>Kết quả cho "{keyword}":</b>\n\n'
-        for idx, file in enumerate(results, 1):
-            file_path_str = str(file["path"])
-            name = str(Path(file_path_str).name)
-            file_path = file_path_str
-            doc_type = str(file.get("doc_type", "Khác"))
-            vendor = str(file.get("vendor") or "")
-            file_id = file.get("id")
+        import html
+        keyword_safe = html.escape(keyword)
 
-            msg += f"{idx}. <b>{name}</b>\n"
-            msg += f"   🏷 {doc_type} | {vendor}\n"
-            msg += f"   📂 <code>{file_path}</code>\n\n"
+        msg = f'🔎 <b>Kết quả cho "{keyword_safe}":</b>\n\n'
+        for i, row in enumerate(results, 1):
+            name = Path(row["path"]).name
+            doc_type = row.get("doc_type", "Unknown")
+            vendor = row.get("vendor", "Unknown")
+            file_path_str = str(row["path"]).replace("/Users/xitrum/MedicalDevices/", "")
+            file_id = row.get("id")
+
+            name_safe = html.escape(name)
+            doc_type_safe = html.escape(doc_type)
+            vendor_safe = html.escape(str(vendor))
+            file_path_safe = html.escape(file_path_str)
+
+            msg += f"{i}. <b>{name_safe}</b>\n"
+            msg += f"   🏷 {doc_type_safe} | 🏭 {vendor_safe}\n"
+            msg += f"   📂 <code>{file_path_safe}</code>\n\n"
 
             # Thêm nút bấm tải file
             if file_id:
                 keyboard.append(
                     [
                         InlineKeyboardButton(
-                            f"📥 Tải file #{idx} ({name[:20]}...)", callback_data=f"send_{file_id}"
+                            f"📥 Tải file #{i} ({name[:20]}...)", callback_data=f"send_{file_id}"
                         )
                     ]
                 )
@@ -301,9 +313,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             file_path = file_info.get("path", "")
 
-            # Đánh dấu đã confirm
-            await store._conn.execute("UPDATE files SET confirmed = 1 WHERE id = ?", (file_id,))
-            await store._conn.commit()
+            # Đánh dấu đã confirm qua API public
+            await store.confirm_file(file_id)
 
             # --- Thực hiện di chuyển file & Wiki ---
             import shutil
@@ -337,11 +348,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 search_data = f"{new_path_str} {vendor} {model} {file_info.get('summary', '')} {doc_type}".lower()
                 search_text = unidecode.unidecode(search_data)
 
-                await store._conn.execute(
-                    "UPDATE files SET path = ?, search_text = ? WHERE id = ?",
-                    (new_path_str, search_text, file_id),
-                )
-                await store._conn.commit()
+                await store.confirm_file_and_update_path(file_id, new_path_str, search_text)
 
                 shutil.move(file_path, new_path)
                 file_path = new_path_str

@@ -309,6 +309,25 @@ class IndexStore:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
+    async def confirm_file_and_update_path(self, file_id: int, new_path: str, search_text: str) -> None:
+        """Đánh dấu file đã confirmed và cập nhật path mới."""
+        if not self._conn:
+            await self.init()
+        await self._conn.execute(
+            "UPDATE files SET confirmed = 1, path = ?, search_text = ? WHERE id = ?",
+            (new_path, search_text, file_id),
+        )
+        await self._conn.commit()
+
+    async def confirm_file(self, file_id: int) -> None:
+        """Đánh dấu file đã được user phê duyệt (giữ nguyên path)."""
+        if not self._conn:
+            await self.init()
+        await self._conn.execute(
+            "UPDATE files SET confirmed = 1 WHERE id = ?", (file_id,)
+        )
+        await self._conn.commit()
+
     async def search(
         self,
         doc_type: str | list[str] | None = None,

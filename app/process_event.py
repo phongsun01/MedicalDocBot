@@ -126,16 +126,16 @@ async def process_new_file(
             if token and group_chat_id:
                 try:
                     bot = Bot(token=token)
-                    safe_filename = escape_markdown(Path(file_path).name, version=2)
-                    safe_error = escape_markdown(str(e), version=2)
+                    safe_filename = html.escape(Path(file_path).name)
+                    safe_error = html.escape(str(e))
                     error_report = (
-                        f"❌ *Lỗi phân loại tài liệu\\!*\n\n"
-                        f"*File:* `{safe_filename}`\n"
-                        f"*Lỗi:* {safe_error}\n\n"
-                        f"Vui lòng kiểm tra lại quota hoặc thử lại sau\\."
+                        f"❌ <b>Lỗi phân loại tài liệu!</b>\n\n"
+                        f"<b>File:</b> <code>{safe_filename}</code>\n"
+                        f"<b>Lỗi:</b> {safe_error}\n\n"
+                        f"Vui lòng kiểm tra lại quota hoặc thử lại sau."
                     )
                     await bot.send_message(
-                        chat_id=group_chat_id, text=error_report, parse_mode=ParseMode.MARKDOWN_V2
+                        chat_id=group_chat_id, text=error_report, parse_mode=ParseMode.HTML
                     )
                 except Exception as tg_err:
                     logger.error(f"Lỗi gửi Telegram báo lỗi: {tg_err}")

@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.1] - 2026-02-23
+
+### Fixed
+- **Markdown vs HTML mixing in Telegram Bot**: Fixed crash issues occurring when naming schemes clashed with Markdown in `/latest`, `/find`, system errors, and `approve` callback handlers by standardizing completely on HTML strings and `html.escape`. (Fixes Bug #1, #2, #5, #6).
+- **IndexStore DB Encapsulation**: Refactored `telegram_bot.py` to use `IndexStore.confirm_file` and `IndexStore.confirm_file_and_update_path`. Absolute elimination of direct `_conn` accesses. (Fixes Bug #3, #4).
+- **Sub-word matching in Search Regex**: Replaced generic Python regex `\b` with robust word boundaries `(^|\s)` for reliable unicode Vietnamese partial keyword stripping in `search.py`. (Fixes Bug #7).
+- **9Router Initial Config Name**: Replaced invalid "openrouter/auto" string in `config.yaml` with the actually functional "if/glm-4.7" local prefix. (Fixes Bug #8).
+- **Wiki Generator Double Newlines**: Removed excess spacing by utilizing `"".join()` when combining `\n`-postfixed strings. (Fixes Bug #9).
+- **Watcher Non-Document Filtering**: Updated `config.yaml` with an explicit `allowed_extensions` list and enforced it within `watcher.py` to prevent reading IDE configurations as medical files (e.g. `workspace.json`).
+
+---
+
 ## [2.5.0] - 2026-02-23
 
 ### Added

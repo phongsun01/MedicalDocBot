@@ -37,8 +37,47 @@ watcher:
     - "data"
     - "logs"
     - "*.md"
+    - "*.json"
+    - "*.yaml"
+    - "*.yml"
+    - "*.lock"
+    - "*.py"
+    - "*.sh"
+    - "*.bat"
+    - "*.ini"
+    - "*.cfg"
+    - "*.env"
+    - "*.gitignore"
+    - "*.toml"
+    - "*.log"
+    - "*.db"
+    - "*.sqlite"
+    - "*.png"
+    - "*.jpg"
+    - "*.jpeg"
+    - "*.gif"
+    - "*.svg"
+    - "*.ico"
+    - "*.workspace"
+    - "*.code-workspace"
+  # Whitelist extension — CHỈ xử lý các loại tài liệu y tế
+  # File có extension không nằm trong danh sách này sẽ bị bỏ qua hoàn toàn
+  allowed_extensions:
+    - ".pdf"
+    - ".docx"
+    - ".doc"
+    - ".xlsx"
+    - ".xls"
+    - ".pptx"
+    - ".ppt"
+    - ".csv"
+    - ".txt"
+    - ".rtf"
+    - ".odt"
+    - ".ods"
+    - ".odp"
   # Kích thước file tối thiểu để xử lý (bytes) — bỏ qua file rỗng
-  min_file_size_bytes: 100
+  min_file_size_bytes: 1024
 
 classifier:
   # Ngưỡng confidence để auto-suggest (không hỏi user)
@@ -110,7 +149,7 @@ services:
   9router:
     enabled: true
     # Model sử dụng cho phân loại và trích xuất
-    model: "openrouter/auto"
+    model: "if/glm-4.7"
     # Địa chỉ local port do pm2 / docker cung cấp
     base_url: "http://localhost:20128/v1"
     # Timeout HTTP request (giây)

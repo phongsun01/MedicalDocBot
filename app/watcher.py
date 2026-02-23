@@ -99,6 +99,7 @@ class MedicalFileHandler(FileSystemEventHandler):
         self,
         root_path: Path,
         ignore_patterns: list[str],
+        allowed_extensions: list[str],
         min_size_bytes: int,
         event_queue: asyncio.Queue,
         loop: asyncio.AbstractEventLoop,
@@ -106,20 +107,26 @@ class MedicalFileHandler(FileSystemEventHandler):
         super().__init__()
         self._root = root_path
         self._ignore_patterns = [re.compile(p.replace("*", ".*")) for p in ignore_patterns]
+        self._allowed_extensions = {ext.lower() for ext in allowed_extensions}
         self._min_size = min_size_bytes
         self._queue = event_queue
         self._loop = loop
 
     def _should_ignore(self, path: str) -> bool:
         """Kiểm tra file có nên bỏ qua không."""
-        name = Path(path).name
+        p = Path(path)
+        name = p.name
         # Kiểm tra ignore patterns
         for pattern in self._ignore_patterns:
             if pattern.match(name):
                 return True
+        # Kiểm tra whitelist extension
+        if p.suffix.lower() not in self._allowed_extensions:
+            return True
+            
         # Kiểm tra whitelist path
         try:
-            Path(path).relative_to(self._root)
+            p.relative_to(self._root)
         except ValueError:
             logger.warning("Path ngoài whitelist, bỏ qua: %s", path)
             return True
@@ -304,6 +311,7 @@ class MedicalWatcher:
         handler = MedicalFileHandler(
             root_path=self._root,
             ignore_patterns=self._ignore,
+            allowed_extensions=self._config["watcher"]["allowed_extensions"],
             min_size_bytes=self._min_size,
             event_queue=self._event_queue,
             loop=loop,
