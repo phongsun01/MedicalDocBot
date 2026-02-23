@@ -16,7 +16,7 @@ import yaml
 from dotenv import load_dotenv
 from kreuzberg import extract_file
 
-load_dotenv()
+load_dotenv(override=False)
 
 logger = logging.getLogger(__name__)
 

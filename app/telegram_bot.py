@@ -172,7 +172,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # (Giữ nguyên logic status cũ nhưng sửa lỗi nếu hàm bị lỗi)
     store: IndexStore | None = context.bot_data.get("store")
     if not store:
-        await update.message.reply_text("🔴 Lỗi kết nối Database.", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("🔴 Lỗi kết nối Database.", parse_mode=ParseMode.HTML)
         return
 
     try:
@@ -193,7 +193,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"- 🧠 AI Model: <code>{html.escape(model_name)}</code>"
         )
     except Exception as e:
-        msg = f"🔴 Lỗi lấy trạng thái: {e}"
+        import html as _html
+        msg = f"🔴 Lỗi lấy trạng thái: {_html.escape(str(e))}"
 
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
 
@@ -241,9 +242,11 @@ async def _send_file_to_user(bot, chat_id, store, file_id: int):
         return
 
     # Gửi file
+    import html as _html
+    safe_fname = _html.escape(Path(file_path).name)
     msg = await bot.send_message(
         chat_id=chat_id,
-        text=f"⏳ Đang tải tệp <b>{Path(file_path).name}</b>...",
+        text=f"⏳ Đang tải tệp <b>{safe_fname}</b>...",
         parse_mode=ParseMode.HTML,
     )
     try:
@@ -392,11 +395,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("edit_"):
         file_id = data.split("_")[1]
-        msg = (
-            f"Sắp tới mình sẽ hỗ trợ chọn loại tài liệu trực tiếp trên Telegram. "
-            f"Tạm thời bạn có thể dùng lệnh /update {file_id} doc_type để sửa."
-        )
-        await query.message.reply_text(msg)
+        msg = f"Sắp tới mình sẽ hỗ trợ chỉnh sửa trực tiếp. Tạm thời dùng /update {file_id} doc_type."
+        await _safe_edit(query, msg)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.6.3] - 2026-02-24
+
+### Fixed
+- **`status_command`**: Removed remaining `ParseMode.MARKDOWN` reference; exception path now wraps error string with `html.escape` to prevent `BadRequest` on special characters.
+- **`_send_file_to_user`**: Applied `html.escape` on filename before embedding in HTML bold tag.
+- **`edit_` callback**: Replaced unsafe `query.message.reply_text` (crashes if message is deleted) with `_safe_edit` wrapper.
+- **`classifier.py`**: Changed `load_dotenv()` to `load_dotenv(override=False)` to prevent environment variable pollution when module is imported in tests.
+
+---
+
 ## [2.6.2] - 2026-02-24
 
 ### Fixed
