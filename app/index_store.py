@@ -480,7 +480,7 @@ class IndexStore:
         if not updates:
             return
 
-        await self.init_db()
+        await self.init()
 
         _ALLOWED_UPDATE_COLUMNS = {"vendor", "model", "doc_type", "device_slug",
                                    "category_slug", "group_slug", "summary"}

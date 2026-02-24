@@ -85,9 +85,9 @@ def detect_manual_placement(file_path: str, config: dict) -> dict | None:
             return None
             
         # Try to parse vendor/model from device_slug
-        parts = device_slug.split("_")
-        vendor = parts[0].capitalize() if len(parts) > 0 else "Unknown"
-        model = "_".join(parts[1:]).upper() if len(parts) > 1 else "Unknown"
+        # Không thể suy đoán chính xác vendor/model từ snake_case slug
+        vendor = "Unknown"
+        model = device_slug
         
         return {
             "doc_type": doc_type,

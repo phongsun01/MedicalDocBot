@@ -1,4 +1,17 @@
 # Changelog
+ 
+## [2.7.3] - 2026-02-24
+### Fixed
+- **Core**: Sửa lỗi `AttributeError` khi gọi `init_db()` thay vì `init()` trong `index_store.py`.
+- **Bot**: Sửa lỗi chồng chéo (shadowing) biến `store` trong các hàm callback của Telegram.
+- **Bot**: Thêm `html.escape` cho tên tệp khi gửi tài liệu để tránh lỗi cú pháp HTML.
+- **Watcher**: Thay thế `asyncio.get_event_loop()` (đã lỗi thời) bằng `asyncio.get_running_loop()`.
+- **Search**: Đổi tên `DOC_TYPE_MAP` thành `KEYWORD_TO_DOC_TYPE` để tránh trùng tên và bổ sung từ khóa tìm kiếm.
+- **Classifier**: Cải thiện logic bắt ngoại lệ (exception handling) để xử lý retry chính xác hơn.
+- **Process**: Cải thiện việc tách tên hãng (vendor) và model từ slug thiết bị.
+- **Wiki**: Tối ưu hóa phạm vi biến trong trình tạo mục lục Wiki.
+- **Tests**: Cập nhật fixture bộ test và bổ sung `test_v272_fixes.py` để kiểm tra các bản vá.
+
 
 ## [2.7.2] - 2026-02-24
 ### Fixed

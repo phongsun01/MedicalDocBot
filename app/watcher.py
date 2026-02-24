@@ -313,7 +313,7 @@ class MedicalWatcher:
         logger.info("📁 Watch path: %s", self._root)
         logger.info("⏱️  Debounce: %ss", self._debounce)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         handler = MedicalFileHandler(
             root_path=self._root,
             ignore_patterns=self._ignore,

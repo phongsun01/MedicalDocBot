@@ -8,7 +8,7 @@ from typing import Any
 from app.index_store import IndexStore
 
 # Bảng map nhanh các từ khóa tiếng Việt sang doc_type
-DOC_TYPE_MAP = {
+KEYWORD_TO_DOC_TYPE = {
     "hợp đồng": "hop_dong",
     "hd": "hop_dong",
     "báo giá": "bao_gia",
@@ -23,6 +23,8 @@ DOC_TYPE_MAP = {
     "trúng thầu": "trung_thau",
     "so sánh": "so_sanh",
     "ss": "so_sanh",
+    "hướng dẫn": "huong_dan_su_dung",
+    "hdsd": "huong_dan_su_dung",
 }
 
 
@@ -37,9 +39,9 @@ def parse_search_query(raw_query: str) -> tuple[list[str], str | None]:
     remaining_keyword = raw_query
 
     # Sort keys theo độ dài giảm dần để ưu tiên match từ khóa dài trước (ví dụ "hướng dẫn" trước "hướng")
-    for kw in sorted(DOC_TYPE_MAP.keys(), key=len, reverse=True):
+    for kw in sorted(KEYWORD_TO_DOC_TYPE.keys(), key=len, reverse=True):
         if kw in remaining_keyword:
-            dt = DOC_TYPE_MAP[kw]
+            dt = KEYWORD_TO_DOC_TYPE[kw]
             if dt not in detected_doc_types:
                 detected_doc_types.append(dt)
             # Xóa keyword khỏi chuỗi để nhường chỗ cho model/vendor

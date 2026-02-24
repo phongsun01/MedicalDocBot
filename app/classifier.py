@@ -188,7 +188,10 @@ Lưu ý quan trọng:
                         raise Exception(str(e))
                 except Exception as e:
                     logger.error(f"Lỗi không xác định: {e}")
-                    raise Exception(str(e))
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(base_delay * (2**attempt))
+                    else:
+                        raise e
 
 
 async def main():

@@ -254,7 +254,7 @@ async def _send_file_to_user(bot, chat_id, store, file_id: int):
     try:
         with open(file_path, "rb") as doc:
             await bot.send_document(
-                chat_id=chat_id, document=doc, caption=f"📄 {Path(file_path).name}"
+                chat_id=chat_id, document=doc, caption=f"📄 {_html.escape(Path(file_path).name)}"
             )
         await msg.delete()  # Xóa tin nhắn "Đang tải"
     except Exception as e:
@@ -427,7 +427,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_")
         file_id = int(parts[2])
         new_type = "_".join(parts[3:])
-        store: IndexStore | None = context.bot_data.get("store")
         if store:
             file_info = await store.get_file_by_id(file_id)
             if file_info:
@@ -491,51 +490,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Kiểm tra ForceReply Edit Flow
     if "awaiting_input" in context.user_data:
         input_data = context.user_data["awaiting_input"]
-        # Phải là một Reply thực sự vào đúng tin nhắn Bot vừa yêu cầu
         if update.message.reply_to_message and update.message.reply_to_message.message_id == input_data["message_id"]:
-            file_id = input_data["file_id"]
-            field = input_data["field"]
-            original_message_id = input_data["original_message_id"]
+            try:
+                file_id = input_data["file_id"]
+                field = input_data["field"]
+                original_message_id = input_data["original_message_id"]
 
-            store: IndexStore | None = context.bot_data.get("store")
-            if store:
-                file_info = await store.get_file_by_id(file_id)
-                if file_info:
-                    new_val = text.strip()
-                    # Lấy values cũ để tái cấu trúc slug
-                    v = new_val if field == "vendor" else file_info.get("vendor", "Unknown")
-                    m = new_val if field == "model" else file_info.get("model", "Unknown")
+                store: IndexStore | None = context.bot_data.get("store")
+                if store:
+                    file_info = await store.get_file_by_id(file_id)
+                    if file_info:
+                        new_val = text.strip()
+                        # Lấy values cũ để tái cấu trúc slug
+                        v = new_val if field == "vendor" else file_info.get("vendor", "Unknown")
+                        m = new_val if field == "model" else file_info.get("model", "Unknown")
 
-                    from app.slug import build_device_slug
-                    # build_device_slug trả về str, không phải tuple
-                    device_slug = build_device_slug(v, m)
-                    
-                    await store.update_file_metadata(file_id, {
-                        field: new_val,
-                        "device_slug": device_slug,
-                    })
+                        from app.slug import build_device_slug
+                        # build_device_slug trả về str, không phải tuple
+                        device_slug = build_device_slug(v, m)
+                        
+                        await store.update_file_metadata(file_id, {
+                            field: new_val,
+                            "device_slug": device_slug,
+                        })
 
-                    # Xoá tin nhắn reply và tin nhắn ForceReply của bot
-                    try:
-                        await update.message.delete()
-                        await context.bot.delete_message(chat_id=update.message.chat_id, message_id=input_data["message_id"])
-                    except Exception:
-                        pass # Bot không có quyền xoá trong group? Vẫn tiếp tục
+                        # Xoá tin nhắn reply và tin nhắn ForceReply của bot
+                        try:
+                            await update.message.delete()
+                            await context.bot.delete_message(chat_id=update.message.chat_id, message_id=input_data["message_id"])
+                        except Exception:
+                            pass # Bot không có quyền xoá trong group? Vẫn tiếp tục
 
-                    # Refresh lại thông báo Draft
-                    from app.ui import render_draft_message
-                    updated_file_info = await store.get_file_by_id(file_id)
-                    report, reply_markup = render_draft_message(updated_file_info, config, confidence=None, is_confident=True)
-                    try:
-                        await context.bot.edit_message_text(
-                            chat_id=update.message.chat_id,
-                            message_id=original_message_id,
-                            text=report,
-                            parse_mode=ParseMode.HTML,
-                            reply_markup=reply_markup
-                        )
-                    except Exception as e:
-                        logger.error(f"Lỗi refresh sau edit: {e}")
+                        # Refresh lại thông báo Draft
+                        from app.ui import render_draft_message
+                        updated_file_info = await store.get_file_by_id(file_id)
+                        report, reply_markup = render_draft_message(updated_file_info, config, confidence=None, is_confident=True)
+                        try:
+                            await context.bot.edit_message_text(
+                                chat_id=update.message.chat_id,
+                                message_id=original_message_id,
+                                text=report,
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=reply_markup
+                            )
+                        except Exception as e:
+                            logger.error(f"Lỗi refresh sau edit: {e}")
 
             finally:
                 # Đảm bảo state awaiting_input luôn được xóa dù có exception

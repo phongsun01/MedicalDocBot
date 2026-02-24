@@ -249,9 +249,10 @@ class WikiGenerator:
             for g in groups:
                 group_label = g["label_vi"]
                 safe_group_label = clean_name(group_label)
-
+                # Dùng một biến nội bộ cho an toàn tránh nhầm scope
+                cat_folder = clean_name(cat_label)
                 cat_lines.append(
-                    f"- [[{safe_cat_label}/{safe_group_label}/00_Index|{group_label}]]\n"
+                    f"- [[{cat_folder}/{safe_group_label}/00_Index|{group_label}]]\n"
                 )
 
                 # 3. Group Index

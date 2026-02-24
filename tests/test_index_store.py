@@ -9,8 +9,7 @@ async def store(tmp_path):
     index_store = IndexStore(db_path)
     await index_store.init()
     yield index_store
-    # Cleanup happens automatically by tmp_path, but we can close connection if needed
-    # IndexStore doesn't have a close method yet, we might want to add one.
+    await index_store.close()
 
 
 @pytest.mark.asyncio
