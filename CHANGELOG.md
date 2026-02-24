@@ -1,5 +1,16 @@
 # Changelog
  
+## [2.7.4] - 2026-02-24
+### Fixed
+- **Bot**: Cải thiện độ ổn định Telegram bot, sửa lỗi Markdown bị lẫn trong HTML (Commands: `latest`, `find`, `status`) (BUG #1, #2, #7, #8).
+- **Bot**: Thêm `try/catch` qua hàm `_safe_edit_markup` để sửa lỗi thiếu handling khi user nhấn `edit_type` (BUG #11).
+- **Bot**: Đưa `logging.basicConfig` vào `main` để tránh config ở cấp module (BUG #3).
+- **Core**: Sửa lỗi `update_file_metadata` gọi `self.init()` vô điều kiện (BUG #4).
+- **Core**: Sửa race condition lock cấp class trong `classifier.py` bằng cách đưa xuống cấp object instance (BUG #5).
+- **Config**: Cập nhật lại tên model AI 9router từ `openrouter/auto` sang `if/glm-4.7` hợp lệ (BUG #6).
+- **Process**: Loại bỏ import thừa `escape_markdown` nhằm làm gọn mã nguồn (BUG #9).
+- **Tests**: Khắc phục các test assert do sai thứ tự tham số hoặc escape HTML (BUG #12, #13).
+
 ## [2.7.3] - 2026-02-24
 ### Fixed
 - **Core**: Sửa lỗi `AttributeError` khi gọi `init_db()` thay vì `init()` trong `index_store.py`.

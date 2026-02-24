@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from telegram.constants import ParseMode
 
 logger = logging.getLogger(__name__)
 
@@ -470,17 +471,9 @@ class IndexStore:
             return {row[0]: row[1] for row in rows}
 
     async def update_file_metadata(self, file_id: int, updates: dict[str, Any]) -> None:
-        """
-        Cập nhật một hoặc nhiều trường metadata cho một file.
-
-        Args:
-            file_id: ID của file cần cập nhật.
-            updates: Dictionary chứa tên trường và giá trị mới.
-        """
+        """Cập nhật một hoặc nhiều cột cho file cụ thể."""
         if not updates:
             return
-
-        await self.init()
 
         _ALLOWED_UPDATE_COLUMNS = {"vendor", "model", "doc_type", "device_slug",
                                    "category_slug", "group_slug", "summary"}
