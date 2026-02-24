@@ -36,18 +36,16 @@ class MedicalClassifier:
         self.max_retries = router_config.get("max_retries", 5)
         self.rate_limit_seconds = router_config.get("rate_limit_seconds", 6.0)
 
-    # Rate limiting variables (class level)
-    _last_request_time: float = 0.0
-    _request_lock: asyncio.Lock | None = None
+        # Rate limiting variables (instance level)
+        self._last_request_time: float = 0.0
+        self._request_lock = asyncio.Lock()
 
     async def classify_file(self, file_path: str, max_retries: int | None = None) -> dict:
         """
         Phân loại tài liệu bằng AI qua 9router local gateway.
         Đọc nội dung file nếu có thể để tăng độ chính xác.
         """
-        if MedicalClassifier._request_lock is None:
-            MedicalClassifier._request_lock = asyncio.Lock()
-        lock = MedicalClassifier._request_lock
+        lock = self._request_lock
 
         if max_retries is None:
             max_retries = self.max_retries
@@ -106,10 +104,10 @@ Lưu ý quan trọng:
                     # Rate Limiting
                     async with lock:
                         now = time.monotonic()
-                        time_since_last = now - MedicalClassifier._last_request_time
+                        time_since_last = now - self._last_request_time
                         if time_since_last < self.rate_limit_seconds:
                             await asyncio.sleep(self.rate_limit_seconds - time_since_last)
-                        MedicalClassifier._last_request_time = time.monotonic()
+                        self._last_request_time = time.monotonic()
 
                     response = await client.post(url, headers=headers, json=payload)
                     response.raise_for_status()

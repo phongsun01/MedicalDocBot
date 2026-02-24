@@ -266,6 +266,8 @@ class WikiGenerator:
                     device_files = sorted(
                         [f.name for f in group_dir.glob("*.md") if f.name != "00_Index.md"]
                     )
+                else:
+                    device_files = []
 
                 group_lines = [
                     f"# 📑 {group_label}\n",

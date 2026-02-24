@@ -44,8 +44,8 @@ async def test_upsert_and_fetch(store):
 
 @pytest.mark.asyncio
 async def test_stats(store):
-    await store.upsert_file("/a.pdf", "h1", "tech", "d1", "c1", 100)
-    await store.upsert_file("/b.pdf", "h2", "price", "d2", "c1", 200)
+    await store.upsert_file(path="/a.pdf", sha256="h1", doc_type="tech", device_slug="d1", category_slug="c1", size_bytes=100)
+    await store.upsert_file(path="/b.pdf", sha256="h2", doc_type="price", device_slug="d2", category_slug="c1", size_bytes=200)
 
     stats = await store.stats()
     assert stats["total_files"] == 2

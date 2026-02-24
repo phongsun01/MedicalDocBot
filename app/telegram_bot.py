@@ -8,8 +8,12 @@ Chức năng:
 """
 
 import asyncio
+import datetime
+import html
 import logging
 import os
+import shutil
+import unidecode
 from pathlib import Path
 from typing import Any
 
@@ -29,10 +33,8 @@ from telegram.ext import (
 from app.index_store import IndexStore
 
 # Setup logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
 logger = logging.getLogger(__name__)
+
 
 
 def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
@@ -310,6 +312,14 @@ async def _safe_edit(query, text, parse_mode=None, reply_markup=None):
             logger.error(f"Lỗi khi edit_message_text: {tg_err}")
 
 
+async def _safe_edit_markup(query, reply_markup=None):
+    try:
+        await query.edit_message_reply_markup(reply_markup=reply_markup)
+    except Exception as tg_err:
+        if "Message is not modified" not in str(tg_err):
+            logger.error(f"Lỗi khi edit_message_reply_markup: {tg_err}")
+
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xử lý sự kiện click vào nút Inline Keyboard"""
     query = update.callback_query
@@ -347,11 +357,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_path = file_info.get("path", "")
 
             # --- Thực hiện di chuyển file & Wiki ---
-            import shutil
-            from pathlib import Path
-
             from app.taxonomy import Taxonomy
             from app.wiki_generator import WikiGenerator
+
+            # Báo cho Telegram là đang xử lý (vì khâu Wiki có thể chậm)
+            # await query.edit_message_text(text=f"{query.message.text}\n\n⏳ Đang xử lý...")
 
             # Lấy data
             category_slug = file_info.get("category_slug", "chua_phan_loai")
@@ -368,21 +378,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target_dir = root / target_relative
             target_dir.mkdir(parents=True, exist_ok=True)
 
+            # Mở rộng path từ DB để kiểm tra exists chính xác
+            expanded_old_path = os.path.expandvars(os.path.expanduser(file_path))
             new_path = target_dir / Path(file_path).name
 
-            if Path(file_path).resolve() != new_path.resolve() and os.path.exists(file_path):
+            if Path(expanded_old_path).resolve() != new_path.resolve() and os.path.exists(expanded_old_path):
                 new_path_str = str(new_path)
-                import unidecode
 
                 search_data = f"{new_path_str} {vendor} {model} {file_info.get('summary', '')} {doc_type}".lower()
                 search_text = unidecode.unidecode(search_data)
 
                 try:
-                    shutil.move(file_path, new_path)
+                    shutil.move(expanded_old_path, new_path)
                     await store.confirm_file_and_update_path(file_id, new_path_str, search_text)
                     file_path = new_path_str
                 except Exception as move_err:
-                    logger.error(f"Move file thất bại, rollback DB: {move_err}")
+                    logger.exception(f"Move file thất bại: {move_err}")
                     raise
             else:
                 await store.confirm_file(file_id)
@@ -409,21 +420,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _safe_edit(query, msg, parse_mode=ParseMode.HTML)
 
         except Exception as e:
-            logger.error(f"Lỗi khi xử lý approve: {e}")
-            import html as _html
-            await _safe_edit(query, f"❌ Có lỗi khi phê duyệt: {_html.escape(str(e))}")
+            logger.exception(f"Lỗi khi xử lý approve: {e}")
+            await _safe_edit(query, f"❌ Có lỗi khi phê duyệt: {html.escape(str(e))}")
 
     elif data.startswith("edit_menu_"):
         file_id = int(data.split("_")[2])
         from app.ui import render_edit_menu
-        await query.edit_message_reply_markup(reply_markup=render_edit_menu(file_id))
+        await _safe_edit_markup(query, reply_markup=render_edit_menu(file_id))
 
     elif data.startswith("edit_type_"):
         file_id = int(data.split("_")[2])
         from app.ui import render_type_selection_menu
-        await query.edit_message_reply_markup(reply_markup=render_type_selection_menu(file_id))
+        await _safe_edit_markup(query, reply_markup=render_type_selection_menu(file_id))
 
     elif data.startswith("set_type_"):
+
         parts = data.split("_")
         file_id = int(parts[2])
         new_type = "_".join(parts[3:])
@@ -551,6 +562,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def main():
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    )
     global config
 
     load_dotenv()

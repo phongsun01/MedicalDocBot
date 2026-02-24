@@ -10,7 +10,6 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 from telegram import Bot
-from telegram.constants import ParseMode
 from telegram.helpers import escape_markdown
 
 from app.classifier import MedicalClassifier
