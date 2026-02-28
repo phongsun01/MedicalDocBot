@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from telegram.constants import ParseMode
 
 logger = logging.getLogger(__name__)
 
@@ -477,6 +476,24 @@ class IndexStore:
 
         _ALLOWED_UPDATE_COLUMNS = {"vendor", "model", "doc_type", "device_slug",
                                    "category_slug", "group_slug", "summary"}
+
+        # Recalculate search_text if relevant fields are updated
+        needs_search_update = any(k in updates for k in ["vendor", "model", "summary", "doc_type"])
+        if needs_search_update:
+            current_row = await self.get_file_by_id(file_id)
+            if current_row:
+                path_str = current_row.get("path", "")
+                vendor = updates.get("vendor", current_row.get("vendor", ""))
+                model = updates.get("model", current_row.get("model", ""))
+                summary = updates.get("summary", current_row.get("summary", ""))
+                doc_type = updates.get("doc_type", current_row.get("doc_type", ""))
+                
+                import unidecode
+                search_data = f"{path_str} {vendor or ''} {model or ''} {summary or ''} {doc_type}".lower()
+                updates["search_text"] = unidecode.unidecode(search_data)
+
+        if "search_text" in updates:
+            _ALLOWED_UPDATE_COLUMNS.add("search_text")
 
         set_clauses = []
         params: list[Any] = []

@@ -72,7 +72,7 @@ Chưa cần Paperless.
   - [x] Encapsulation DB & SQL Injection protection
   - [x] Tự động di chuyển file khi Phê duyệt
   - [x] Tự động cập nhật Wiki Obsidian
-  - [x] Bàn giao bản vá ổn định (v2.7.4): Fix 13 critical/logic bugs, HTML mode Telegram, rate-limit resilience.
+  - [x] Bàn giao bản vá ổn định (v2.7.5): Fix các test case và HTML rendering.
 
 **Deliverable**: Thêm 1 file → bot hỏi với nút → bấm Phê duyệt → nhãn lưu + wiki cập nhật. ✅
 

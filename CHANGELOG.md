@@ -1,5 +1,14 @@
 # Changelog
  
+## [2.7.5] - 2026-02-28
+### Fixed
+- **Bot**: Sửa lỗi crash luồng xử lý do thiếu import `ParseMode` (BUG #1).
+- **Core**: Xóa bỏ import thừa `escape_markdown` (BUG #2) và `ParseMode` (BUG #8) để tối ưu mã nguồn.
+- **UI**: Bổ sung `lien_ket` vào bộ dịch thuật `DOC_TYPE_MAP` đảm bảo menu hiển thị đầy đủ (BUG #7).
+- **Core**: Thêm tự động nội suy cập nhật `search_text` trong hàm `update_file_metadata` giúp tính năng tìm kiếm `/find` luôn phản ánh dữ liệu mới (BUG #9).
+- **Tests**: Đóng gói các import lồng ghép cấp framework trong `test_v271_fixes.py` vào `try/except` giúp tránh đứt gãy do lỗi môi trường (BUG #10).
+- **Security**: Đã revoke file `.env` ra khỏi git theo user request.
+
 ## [2.7.4] - 2026-02-24
 ### Fixed
 - **Bot**: Cải thiện độ ổn định Telegram bot, sửa lỗi Markdown bị lẫn trong HTML (Commands: `latest`, `find`, `status`) (BUG #1, #2, #7, #8).
